@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
 import 'package:conduit/widgets/icon_chip_widget.dart';
@@ -59,7 +59,7 @@ class ConnectionStatusScreen extends StatelessWidget {
                           ListTile(
                             contentPadding: listTilePadding,
                             leading: IconChip(
-                              icon: PhosphorIconsRegular.hardDrives,
+                              icon: PyxIcons.hardDrives,
                               color: connected ? null : Colors.amber,
                             ),
                             // Stack name/status in the title (not subtitle) to keep the

@@ -1,5 +1,5 @@
 import 'package:balanced_text/balanced_text.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:conduit/bridge_generated.dart/lib.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
@@ -190,7 +190,7 @@ class _BaseScreenState extends State<BaseScreen> {
 
   Widget _buildSeedPhraseCard() {
     return SettingsCard(
-      icon: PhosphorIconsRegular.key,
+      icon: PyxIcons.key,
       title: 'Recovery Phrase',
       subtitle: 'Backup your Wallet',
       onTap: _handleSeedPhraseTap,
@@ -199,7 +199,7 @@ class _BaseScreenState extends State<BaseScreen> {
 
   Widget _buildCurrencyCard() {
     return SettingsCard(
-      icon: PhosphorIconsRegular.currencyDollar,
+      icon: PyxIcons.currencyDollar,
       title: 'Select Currency',
       subtitle: _currencyName,
       onTap: _handleCurrencyTap,
@@ -210,7 +210,7 @@ class _BaseScreenState extends State<BaseScreen> {
     final guardians = federation.guardians;
 
     return SettingsCard(
-      icon: PhosphorIconsRegular.wallet,
+      icon: PyxIcons.wallet,
       title: federation.name,
       subtitle: '$guardians ${guardians == 1 ? 'Guardian' : 'Guardians'}',
       onTap: () => _handleFederationTap(federation),

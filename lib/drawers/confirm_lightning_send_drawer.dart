@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:conduit/bridge_generated.dart/lib.dart';
@@ -69,7 +69,7 @@ class ConfirmLightningSendDrawer extends StatelessWidget {
             ),
             ...amountRows(client: client, amountSats: amountSats),
             DetailRow(
-              icon: PhosphorIconsRegular.network,
+              icon: PyxIcons.network,
               label: 'Network Fee',
               value:
                   '${NumberFormat('#,###').format(fees.feeSats)} sat · ${(fees.feeSats / amountSats * 100).toStringAsFixed(1)}%',

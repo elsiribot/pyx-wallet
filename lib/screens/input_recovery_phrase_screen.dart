@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:conduit/bridge_generated.dart/lib.dart';
 import 'package:conduit/screens/confirm_recovery_phrase_screen.dart';
@@ -79,7 +79,7 @@ class _InputRecoveryPhraseScreenState extends State<InputRecoveryPhraseScreen> {
         itemBuilder:
             (context, word) => ListTile(
               contentPadding: listTilePadding,
-              leading: const IconChip(icon: PhosphorIconsRegular.key),
+              leading: const IconChip(icon: PyxIcons.key),
               title: Text(word, style: mediumStyle),
               onTap: () => _selectWord(word),
             ),

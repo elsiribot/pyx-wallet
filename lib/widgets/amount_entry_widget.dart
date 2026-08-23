@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -169,9 +169,9 @@ class _AmountEntryWidgetState extends State<AmountEntryWidget> {
             _buildNumberButton('7'),
             _buildNumberButton('8'),
             _buildNumberButton('9'),
-            _buildActionButton(PhosphorIconsRegular.x, _onClear),
+            _buildActionButton(PyxIcons.x, _onClear),
             _buildNumberButton('0'),
-            _buildActionButton(PhosphorIconsRegular.arrowLeft, _onBackspace),
+            _buildActionButton(PyxIcons.arrowLeft, _onBackspace),
           ],
         ),
       ],

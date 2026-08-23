@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:conduit/utils/styles.dart';
@@ -73,7 +73,7 @@ class _QrScannerWidgetState extends State<QrScannerWidget> {
                 child: IconButton(
                   onPressed: _handleClipboardPaste,
                   icon: const Icon(
-                    PhosphorIconsRegular.clipboardText,
+                    PyxIcons.clipboardText,
                     size: smallIconSize,
                   ),
                 ),

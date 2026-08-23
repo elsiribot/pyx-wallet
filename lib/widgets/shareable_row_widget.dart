@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:ellipsized_text/ellipsized_text.dart';
@@ -22,7 +22,7 @@ class ShareableRow extends StatelessWidget {
         SharePlus.instance.share(ShareParams(text: data));
       },
       contentPadding: listTilePadding,
-      leading: const IconChip(icon: PhosphorIconsRegular.copy),
+      leading: const IconChip(icon: PyxIcons.copy),
       title: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,

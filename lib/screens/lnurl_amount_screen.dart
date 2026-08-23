@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:conduit/utils/styles.dart';
@@ -86,14 +86,14 @@ class _LnurlAmountScreenState extends State<LnurlAmountScreen> {
           if (_contactName == null)
             IconButton(
               icon: const Icon(
-                PhosphorIconsRegular.userPlus,
+                PyxIcons.userPlus,
                 size: smallIconSize,
               ),
               onPressed: _handleSaveContact,
             )
           else
             IconButton(
-              icon: const Icon(PhosphorIconsRegular.copy, size: smallIconSize),
+              icon: const Icon(PyxIcons.copy, size: smallIconSize),
               onPressed: _handleShare,
             ),
         ],

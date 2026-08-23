@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:conduit/utils/styles.dart';
 import 'package:conduit/utils/number_utils.dart';
@@ -20,7 +20,7 @@ BorderedList seedPhraseList(BuildContext context, List<String> seedPhrase) {
       for (int i = 0; i < seedPhrase.length; i++)
         ListTile(
           contentPadding: listTilePadding,
-          leading: const IconChip(icon: PhosphorIconsRegular.key),
+          leading: const IconChip(icon: PyxIcons.key),
           // Stack word/number in the title (not subtitle) to keep the tile's
           // single-line height instead of growing to two-line.
           title: Column(

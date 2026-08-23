@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:conduit/bridge_generated.dart/factory.dart';
 import 'package:conduit/bridge_generated.dart/currency.dart';
@@ -45,7 +45,7 @@ class _SelectCurrencyScreenState extends State<SelectCurrencyScreen> {
             (context, currency) => ListTile(
               contentPadding: listTilePadding,
               leading: const IconChip(
-                icon: PhosphorIconsRegular.currencyDollar,
+                icon: PyxIcons.currencyDollar,
               ),
               // Stack name/code in the title (not subtitle) to keep the tile's
               // single-line height instead of growing to two-line.

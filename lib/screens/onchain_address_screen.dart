@@ -1,6 +1,6 @@
 import 'package:balanced_text/balanced_text.dart';
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:conduit/utils/styles.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
 import 'package:conduit/widgets/qr_code_widget.dart';
@@ -93,13 +93,13 @@ class _OnchainAddressScreenState extends State<OnchainAddressScreen> {
           if (addresses.isNotEmpty)
             IconButton(
               icon: const Icon(
-                PhosphorIconsRegular.arrowsClockwise,
+                PyxIcons.arrowsClockwise,
                 size: smallIconSize,
               ),
               onPressed: _recheckAddress,
             ),
           IconButton(
-            icon: const Icon(PhosphorIconsRegular.plus, size: smallIconSize),
+            icon: const Icon(PyxIcons.plus, size: smallIconSize),
             onPressed: _showGenerateConfirmation,
           ),
         ],

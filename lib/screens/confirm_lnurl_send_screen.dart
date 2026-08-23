@@ -10,7 +10,7 @@ import 'package:conduit/widgets/payment_summary_row_widget.dart';
 import 'package:conduit/widgets/detail_row_widget.dart';
 import 'package:conduit/widgets/amount_rows.dart';
 import 'package:conduit/utils/auth_utils.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 
 class ConfirmLnurlSendScreen extends StatefulWidget {
   final ConduitClient client;
@@ -67,7 +67,7 @@ class _ConfirmLnurlSendScreenState extends State<ConfirmLnurlSendScreen> {
                     amountSats: widget.amountSats,
                   ),
                   DetailRow(
-                    icon: PhosphorIconsRegular.network,
+                    icon: PyxIcons.network,
                     label: 'Network Fee',
                     value:
                         '${NumberFormat('#,###').format(widget.fees.feeSats)} sat · ${(widget.fees.feeSats / widget.amountSats * 100).toStringAsFixed(1)}%',

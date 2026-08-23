@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:conduit/utils/styles.dart';
 import 'package:conduit/bridge_generated.dart/lib.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
@@ -45,7 +45,7 @@ class DisplayEcashScreen extends StatelessWidget {
         title: const Text('Send eCash'),
         actions: [
           IconButton(
-            icon: const Icon(PhosphorIconsRegular.xCircle, size: smallIconSize),
+            icon: const Icon(PyxIcons.xCircle, size: smallIconSize),
             onPressed: () => _handleCancel(context),
           ),
         ],

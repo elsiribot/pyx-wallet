@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:conduit/utils/styles.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
@@ -101,7 +101,7 @@ class _RecoveryDrawerState extends State<RecoveryDrawer> {
 
     return ListTile(
       contentPadding: listTilePadding,
-      leading: const IconChip(icon: PhosphorIconsRegular.arrowsClockwise),
+      leading: const IconChip(icon: PyxIcons.arrowsClockwise),
       title: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -133,7 +133,7 @@ class _RecoveryDrawerState extends State<RecoveryDrawer> {
     return ListTile(
       contentPadding: listTilePadding,
       leading: IconChip(
-        icon: PhosphorIconsRegular.warningCircle,
+        icon: PyxIcons.warningCircle,
         color: Theme.of(context).colorScheme.error,
       ),
       title: Column(

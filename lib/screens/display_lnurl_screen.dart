@@ -1,5 +1,5 @@
 import 'package:balanced_text/balanced_text.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:conduit/utils/styles.dart';
@@ -35,7 +35,7 @@ class DisplayLnurlScreen extends StatelessWidget {
       title: const Text('Receive Lightning'),
       actions: [
         AsyncIconButton(
-          icon: PhosphorIconsRegular.dotsNine,
+          icon: PyxIcons.dotsNine,
           onPressed: _openCheckout,
         ),
       ],

@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -81,8 +81,8 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
           IconButton(
             icon: Icon(
               _display == BalanceDisplay.fiat
-                  ? PhosphorIconsRegular.currencyBtc
-                  : PhosphorIconsRegular.currencyDollar,
+                  ? PyxIcons.currencyBtc
+                  : PyxIcons.currencyDollar,
               size: smallIconSize,
             ),
             onPressed: _toggleDisplay,
@@ -105,21 +105,21 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
               children: [
                 Expanded(
                   child: _FilterButton(
-                    icon: PhosphorIconsRegular.lightning,
+                    icon: PyxIcons.lightning,
                     active: _lightning,
                     onTap: () => setState(() => _lightning = !_lightning),
                   ),
                 ),
                 Expanded(
                   child: _FilterButton(
-                    icon: PhosphorIconsRegular.link,
+                    icon: PyxIcons.link,
                     active: _bitcoin,
                     onTap: () => setState(() => _bitcoin = !_bitcoin),
                   ),
                 ),
                 Expanded(
                   child: _FilterButton(
-                    icon: PhosphorIconsRegular.coinVertical,
+                    icon: PyxIcons.coinVertical,
                     active: _ecash,
                     onTap: () => setState(() => _ecash = !_ecash),
                   ),

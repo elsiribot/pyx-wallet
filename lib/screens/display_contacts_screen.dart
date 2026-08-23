@@ -1,5 +1,5 @@
 import 'package:balanced_text/balanced_text.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
 import 'package:conduit/bridge_generated.dart/factory.dart';
@@ -33,7 +33,7 @@ class _ContactTileState extends State<_ContactTile> with AsyncButtonMixin {
 
   @override
   Widget build(BuildContext context) {
-    const icon = IconChip(icon: PhosphorIconsRegular.user);
+    const icon = IconChip(icon: PyxIcons.user);
 
     // The lnurl payload is the decoded service URL, so its host is the
     // provider domain (e.g. blink.sv) shown as the subheader.

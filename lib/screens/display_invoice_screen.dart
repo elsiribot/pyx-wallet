@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
 import 'package:conduit/widgets/qr_code_widget.dart';
 import 'package:conduit/widgets/bordered_list_widget.dart';
@@ -37,7 +37,7 @@ class DisplayInvoiceScreen extends StatelessWidget {
               ShareableRow(data: invoice, label: 'Lightning Invoice'),
               ...amountRows(client: client, amountSats: amount),
               DetailRow(
-                icon: PhosphorIconsRegular.network,
+                icon: PyxIcons.network,
                 label: 'Network Fee',
                 value:
                     '${NumberFormat('#,###').format(feeSats)} sat · ${(feeSats / amount * 100).toStringAsFixed(1)}%',

@@ -1,17 +1,19 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:conduit/theme/tokens.dart';
+import 'package:conduit/theme/components/buttons.dart';
+import 'package:conduit/theme/components/tx_row.dart';
+import 'package:conduit/screens/home_screen_body.dart';
+import 'package:conduit/screens/settings_screen.dart';
+import 'package:conduit/utils/currency_utils.dart';
 import 'package:app_links/app_links.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
 import 'package:conduit/bridge_generated.dart/events.dart';
 import 'package:conduit/bridge_generated.dart/factory.dart';
 import 'package:conduit/bridge_generated.dart/lib.dart';
-import 'package:conduit/widgets/animated_balance_widget.dart';
-import 'package:conduit/widgets/amount_visibility.dart';
-import 'package:conduit/utils/currency_utils.dart';
 import 'package:conduit/widgets/settings_card_widget.dart';
-import 'package:conduit/widgets/recent_payments_widget.dart';
 import 'package:conduit/screens/invoice_amount_screen.dart';
 import 'package:conduit/screens/ecash_amount_screen.dart';
 import 'package:conduit/screens/onchain_address_screen.dart';
@@ -25,7 +27,6 @@ import 'package:conduit/drawers/lightning_invoice_drawer.dart';
 import 'package:conduit/drawers/lnurl_drawer.dart';
 import 'package:conduit/screens/onchain_amount_screen.dart';
 import 'package:conduit/utils/notification_utils.dart';
-import 'package:conduit/utils/styles.dart';
 import 'package:conduit/screens/display_contacts_screen.dart';
 import 'package:conduit/screens/lightning_address_entry_screen.dart';
 import 'package:conduit/drawers/invite_drawer.dart';
@@ -54,26 +55,11 @@ class _FederationScreenState extends State<FederationScreen> {
   StreamSubscription<Uri>? _linkSubscription;
   int? _expirationDate;
   InviteCodeWrapper? _expirationSuccessor;
-  // Single cycling control over how the balance reads: sats → fiat → hidden.
-  // Starts hidden so balances aren't exposed on open.
-  BalanceDisplay _balanceDisplay = BalanceDisplay.hidden;
-
-  // Whether a cached exchange rate exists, so the fiat step is reachable.
-  // `satsToFiat` is a cache-only sync read returning null when no fresh rate
-  // is stored.
-  bool get _fiatAvailable => widget.client.satsToFiat(amountSats: 0) != null;
-
-  void _cycleBalanceDisplay() {
-    setState(() {
-      // Skip the fiat step entirely when no rate is cached.
-      _balanceDisplay = switch (_balanceDisplay) {
-        BalanceDisplay.sats =>
-          _fiatAvailable ? BalanceDisplay.fiat : BalanceDisplay.hidden,
-        BalanceDisplay.fiat => BalanceDisplay.hidden,
-        BalanceDisplay.hidden => BalanceDisplay.sats,
-      };
-    });
-  }
+  // Eye toggle over balance + amounts (prototype `maskNum`). Starts masked
+  // so balances aren't exposed on open.
+  bool _masked = true;
+  List<ConduitPayment> _payments = [];
+  StreamSubscription<RecentPaymentsUpdate>? _paymentsSubscription;
 
   @override
   void initState() {
@@ -81,6 +67,7 @@ class _FederationScreenState extends State<FederationScreen> {
     _eventStream = widget.client.subscribeEventLog();
     _balanceStream = widget.client.subscribeBalance();
     _connectionStream = widget.client.subscribeConnectionStatus();
+    _paymentsSubscription = _eventStream.listen(_onPaymentsUpdate);
     _initDeepLinks();
     _fetchExpirationStatus();
     // Warm the exchange-rate cache so the fiat toggle is reachable and the
@@ -104,8 +91,25 @@ class _FederationScreenState extends State<FederationScreen> {
     });
   }
 
+  void _onPaymentsUpdate(RecentPaymentsUpdate update) {
+    if (!mounted) return;
+    setState(() => _payments = update.payments);
+    if (update.notification case final notification?) {
+      HapticFeedback.heavyImpact();
+      if (!notification.success) {
+        NotificationUtils.showError(
+          context,
+          notification.incoming
+              ? 'Failed to receive payment'
+              : 'Failed to send payment',
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _paymentsSubscription?.cancel();
     _linkSubscription?.cancel();
     widget.client.shutdown();
     super.dispose();
@@ -252,7 +256,7 @@ class _FederationScreenState extends State<FederationScreen> {
     final successor = _expirationSuccessor;
 
     return SettingsCard(
-      icon: PhosphorIconsRegular.moon,
+      icon: PyxIcons.moon,
       iconColor: Colors.amber,
       title: 'Expires on $formatted',
       subtitle:
@@ -324,266 +328,109 @@ class _FederationScreenState extends State<FederationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: StreamBuilder<List<(String, bool)>>(
-          stream: _connectionStream,
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return const SizedBox.shrink();
-            }
-            final statuses = snapshot.data!;
-            final connected = statuses.where((s) => s.$2).length;
-            final fraction = connected / statuses.length;
-            final color = Theme.of(context).colorScheme.primary;
-            return InkWell(
-              borderRadius: cornerRadius,
-              onTap:
-                  () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder:
-                          (_) => ConnectionStatusScreen(client: widget.client),
-                    ),
-                  ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(end: fraction),
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeInOut,
-                  builder: (context, value, _) {
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
-                      child: LinearProgressIndicator(
-                        value: value,
-                        minHeight: 4,
-                        color: color,
-                        backgroundColor: color.withValues(alpha: 0.3),
-                      ),
-                    );
-                  },
-                ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Topbar: settings gear left; eye toggle + federation status
+            // ring right (prototype `home` topbar, lines 989-994).
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Gaps.screenH,
+                6,
+                Gaps.screenH,
+                14,
               ),
-            );
-          },
-        ),
-        centerTitle: false,
-        actions: [
-          IconButton(
-            icon: const Icon(PhosphorIconsRegular.at, size: smallIconSize),
-            onPressed: _onLightningAddress,
-          ),
-          IconButton(
-            icon: const Icon(PhosphorIconsRegular.users, size: smallIconSize),
-            onPressed: _onContacts,
-          ),
-        ],
-      ),
-      body: AmountDisplay(
-        display: _balanceDisplay,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(0, 16, 0, 32),
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                // Tapping the balance cycles display sats → fiat → hidden,
-                // the same control as the app-bar switcher.
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _cycleBalanceDisplay,
-                  // One subscription to the single-subscription balance stream,
-                  // lifted above the hero so toggling never re-listens to it.
-                  child: StreamBuilder<int>(
-                    stream: _balanceStream,
-                    builder:
-                        (context, snapshot) => _BalanceHero(
-                          sats: snapshot.data ?? 0,
-                          client: widget.client,
-                          display: _balanceDisplay,
-                        ),
-                  ),
-                ),
-              ),
-              if (_expirationDate case final date?)
-                _buildExpiryCard(date)
-              else
-                const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: 0.05),
-                    borderRadius: cornerRadius,
-                  ),
-                  // Each button gets an equal share of the row, so the four
-                  // actions can never overflow the screen width.
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _CircularActionButton(
-                          icon: PhosphorIconsRegular.lightning,
-                          label: 'Lightning',
-                          onTap: _onCreateInvoice,
-                        ),
-                      ),
-                      Expanded(
-                        child: _CircularActionButton(
-                          icon: PhosphorIconsRegular.link,
-                          label: 'Onchain',
-                          onTap: _onReceiveBitcoin,
-                        ),
-                      ),
-                      Expanded(
-                        child: _CircularActionButton(
-                          icon: PhosphorIconsRegular.coinVertical,
-                          label: 'eCash',
-                          onTap: _onSendEcash,
-                        ),
-                      ),
-                      Expanded(
-                        child: _CircularActionButton(
-                          icon: PhosphorIconsRegular.qrCode,
-                          label: 'Scan',
-                          onTap: _onScan,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              RecentPayments(
-                client: widget.client,
-                stream: _eventStream,
-                onTransactionTap: _showEventDetails,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Hero balance shown above the action row. Masked away when hidden, shown in
-/// fiat when toggled (falling back to sats until a rate is cached), otherwise
-/// the animated sats amount.
-class _BalanceHero extends StatelessWidget {
-  final int sats;
-  final ConduitClient client;
-  final BalanceDisplay display;
-
-  const _BalanceHero({
-    required this.sats,
-    required this.client,
-    required this.display,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Fiat when toggled and a rate is cached; otherwise the sats display
-    // (and a "Bitcoin" unit label to match).
-    final fiat =
-        display == BalanceDisplay.fiat ? cachedFiatAmount(client, sats) : null;
-    final hidden = display == BalanceDisplay.hidden;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 36),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        // Stretch to full width so the centered text aligns to the screen
-        // centre rather than shrink-wrapping the number.
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Hidden masks the amount with the same dots used for payment-row
-          // amounts, keeping the " sat" suffix and layout in place.
-          if (hidden)
-            Text.rich(
-              textAlign: TextAlign.center,
-              const TextSpan(
+              child: Row(
                 children: [
-                  TextSpan(text: maskedAmount, style: heroStyle),
-                  TextSpan(text: ' sat', style: largeStyle),
+                  IconBtn(
+                    onTap: _onSettings,
+                    child: Icon(PyxIcons.gearSix),
+                  ),
+                  const Spacer(),
+                  IconBtn(
+                    child: Icon(
+                      _masked ? PyxIcons.eyeSlash : PyxIcons.eye,
+                    ),
+                    onTap: () => setState(() => _masked = !_masked),
+                  ),
+                  const SizedBox(width: 10),
+                  StreamBuilder<List<(String, bool)>>(
+                    stream: _connectionStream,
+                    builder: (context, snapshot) {
+                      final statuses = snapshot.data ?? const [];
+                      final connected =
+                          statuses.where((s) => s.$2).length;
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          IconBtn(
+                            child: Icon(PyxIcons.usersThree),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => ConnectionStatusScreen(
+                                  client: widget.client,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (statuses.isNotEmpty)
+                            Positioned.fill(
+                              child: GuardianRing(
+                                online: connected,
+                                total: statuses.length,
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
                 ],
               ),
-            )
-          else if (fiat != null)
-            AnimatedBalance(
-              sats: sats,
-              style: heroStyle,
-              textAlign: TextAlign.center,
-              // Convert each tweened sats value to fiat so it counts up on the
-              // same tween as the sats view.
-              formatter: (s) => cachedFiatAmount(client, s)?.amount ?? '',
-            )
-          else
-            AnimatedBalance(
-              sats: sats,
-              style: heroStyle,
-              unitStyle: largeStyle,
-              textAlign: TextAlign.center,
             ),
-          const SizedBox(height: 8),
-          Text(
-            fiat?.currency ?? 'Bitcoin',
-            textAlign: TextAlign.center,
-            style: mediumStyle.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            if (_expirationDate case final date?)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: Gaps.screenH),
+                child: _buildExpiryCard(date),
+              ),
+            Expanded(
+              child: StreamBuilder<int>(
+                stream: _balanceStream,
+                builder: (context, snapshot) {
+                  final sats = snapshot.data ?? 0;
+                  final fiat = cachedFiatAmount(widget.client, sats);
+                  return HomeBody(
+                    amount: NumberFormat('#,###')
+                        .format(sats)
+                        .replaceAll(',', ' '),
+                    fiat: fiat == null ? null : '≈ ${fiat.amount}',
+                    masked: _masked,
+                    payments: _payments,
+                    onReceive: _onCreateInvoice,
+                    onSend: _onScan,
+                    onScan: _onScan,
+                    onPaymentTap: _showEventDetails,
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _onSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SettingsScreen(
+          client: widget.client,
+          clientFactory: widget.clientFactory,
+          onLightningAddress: _onLightningAddress,
+          onContacts: _onContacts,
+        ),
       ),
     );
   }
 }
 
-class _CircularActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _CircularActionButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Material(
-          color: Theme.of(context).colorScheme.primary,
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () {
-              HapticFeedback.lightImpact();
-              onTap();
-            },
-            child: SizedBox(
-              width: 64,
-              height: 64,
-              child: Icon(
-                icon,
-                size: mediumIconSize,
-                color: Theme.of(context).colorScheme.onPrimary,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: smallStyle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
-    );
-  }
-}

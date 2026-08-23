@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:conduit/bridge_generated.dart/events.dart';
@@ -50,19 +50,19 @@ class PaymentDetailsDrawer extends StatelessWidget {
               iconColor: event.success == false ? Colors.amber : null,
             ),
             DetailRow(
-              icon: PhosphorIconsRegular.currencyBtc,
+              icon: PyxIcons.currencyBtc,
               label: 'Bitcoin',
               value: _sats(event.amountSats),
             ),
             if (fiat != null)
               DetailRow(
-                icon: PhosphorIconsRegular.currencyDollar,
+                icon: PyxIcons.currencyDollar,
                 label: fiat.currency,
                 value: fiat.amount,
               ),
             if (fee != null)
               DetailRow(
-                icon: PhosphorIconsRegular.network,
+                icon: PyxIcons.network,
                 label: 'Network Fee',
                 value:
                     '${_sats(fee)} · ${(fee / event.amountSats * 100).toStringAsFixed(1)}%',

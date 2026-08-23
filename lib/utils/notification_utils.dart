@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:overlay_support/overlay_support.dart';
 import 'package:conduit/utils/styles.dart';
@@ -71,7 +71,7 @@ class NotificationUtils {
       context,
       'Error',
       message,
-      PhosphorIconsRegular.warning,
+      PyxIcons.warning,
       Colors.amber,
       _defaultNotificationDuration,
     );
@@ -82,7 +82,7 @@ class NotificationUtils {
       context,
       'Success',
       message,
-      PhosphorIconsRegular.checkCircle,
+      PyxIcons.checkCircle,
       Colors.green,
       _defaultNotificationDuration,
     );

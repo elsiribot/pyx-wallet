@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:conduit/utils/styles.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:conduit/theme/theme.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:overlay_support/overlay_support.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
@@ -45,29 +44,10 @@ class ConduitApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return OverlaySupport.global(
       child: MaterialApp(
-        title: 'Conduit',
+        title: 'Pyx Wallet',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-          useMaterial3: true,
-          fontFamily: GoogleFonts.inter().fontFamily,
-          appBarTheme: const AppBarTheme(
-            centerTitle: true,
-            titleTextStyle: mediumStyle,
-          ),
-        ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.deepPurple,
-            brightness: Brightness.dark,
-          ),
-          useMaterial3: true,
-          fontFamily: GoogleFonts.inter().fontFamily,
-          appBarTheme: const AppBarTheme(
-            centerTitle: true,
-            titleTextStyle: mediumStyle,
-          ),
-        ),
+        theme: pyxTheme(),
+        darkTheme: pyxTheme(),
         themeMode: ThemeMode.dark,
         home: home,
       ),

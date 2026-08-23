@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:conduit/utils/styles.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
@@ -42,7 +42,7 @@ class WalletV2ReceiveScreen extends StatelessWidget {
         title: const Text('Receive Onchain'),
         actions: [
           AsyncIconButton(
-            icon: PhosphorIconsRegular.info,
+            icon: PyxIcons.info,
             onPressed: () => _showDetails(context),
           ),
         ],

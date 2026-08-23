@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
 import 'package:conduit/utils/currency_utils.dart';
 import 'package:conduit/widgets/detail_row_widget.dart';
@@ -17,7 +17,7 @@ List<Widget> amountRows({
 }) {
   final rows = <Widget>[
     DetailRow(
-      icon: PhosphorIconsRegular.currencyBtc,
+      icon: PyxIcons.currencyBtc,
       label: 'Bitcoin',
       value: '${NumberFormat('#,###').format(amountSats)} sat',
     ),
@@ -27,7 +27,7 @@ List<Widget> amountRows({
   if (fiat != null) {
     rows.add(
       DetailRow(
-        icon: PhosphorIconsRegular.currencyDollar,
+        icon: PyxIcons.currencyDollar,
         label: fiat.currency,
         value: fiat.amount,
       ),

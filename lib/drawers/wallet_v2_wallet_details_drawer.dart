@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
@@ -51,24 +51,24 @@ class WalletV2WalletDetailsDrawer extends StatelessWidget {
         BorderedList.column(
           children: [
             DetailRow(
-              icon: PhosphorIconsRegular.currencyBtc,
+              icon: PyxIcons.currencyBtc,
               label: 'Bitcoin in Custody',
               value: _btc(stats.totalValueSat),
             ),
             if (fiat != null)
               DetailRow(
-                icon: PhosphorIconsRegular.currencyDollar,
+                icon: PyxIcons.currencyDollar,
                 label: '${fiat.currency} in Custody',
                 value: fiat.amount,
               ),
             DetailRow(
-              icon: PhosphorIconsRegular.cube,
+              icon: PyxIcons.cube,
               label: 'Block Count',
               value: _count(stats.blockCount),
             ),
             if (feerate != null)
               DetailRow(
-                icon: PhosphorIconsRegular.speedometer,
+                icon: PyxIcons.speedometer,
                 label: 'Feerate',
                 value: _feerate(feerate),
               ),

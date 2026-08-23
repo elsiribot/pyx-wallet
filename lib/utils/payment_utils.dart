@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:conduit/bridge_generated.dart/events.dart';
 
@@ -7,15 +7,15 @@ class PaymentTypeUtils {
 
   static IconData getIcon(PaymentType type) {
     return switch (type) {
-      PaymentType.lightning => PhosphorIconsRegular.lightning,
-      PaymentType.bitcoin => PhosphorIconsRegular.link,
-      PaymentType.ecash => PhosphorIconsRegular.coinVertical,
+      PaymentType.lightning => PyxIcons.lightning,
+      PaymentType.bitcoin => PyxIcons.link,
+      PaymentType.ecash => PyxIcons.coinVertical,
     };
   }
 
   /// Arrow encoding payment direction: incoming points down, outgoing up.
   static IconData getDirectionIcon(bool incoming) =>
-      incoming ? PhosphorIconsRegular.arrowDown : PhosphorIconsRegular.arrowUp;
+      incoming ? PyxIcons.arrowDown : PyxIcons.arrowUp;
 
   static String getLabel(PaymentType type) {
     return switch (type) {

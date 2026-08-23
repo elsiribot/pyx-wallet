@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:conduit/utils/styles.dart';
@@ -9,9 +9,9 @@ import 'package:conduit/bridge_generated.dart/factory.dart';
 import 'package:conduit/widgets/async_button_widget.dart';
 
 const _variants = [
-  (PhosphorIconsRegular.lightning, 'Lightning'),
-  (PhosphorIconsRegular.link, 'Onchain'),
-  (PhosphorIconsRegular.coinVertical, 'eCash'),
+  (PyxIcons.lightning, 'Lightning'),
+  (PyxIcons.link, 'Onchain'),
+  (PyxIcons.coinVertical, 'eCash'),
 ];
 
 class LandingScreen extends StatefulWidget {

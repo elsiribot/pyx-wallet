@@ -1,4 +1,4 @@
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:conduit/utils/styles.dart';
 import 'package:conduit/widgets/icon_chip_widget.dart';
@@ -31,7 +31,7 @@ class ConnectionStatusHeader extends StatelessWidget {
 
     return ListTile(
       contentPadding: listTilePadding,
-      leading: IconChip(icon: PhosphorIconsRegular.broadcast, color: color),
+      leading: IconChip(icon: PyxIcons.broadcast, color: color),
       title: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
