@@ -51,6 +51,8 @@ abstract final class PyxIcons {
   static const swap = LucideIcons.arrowLeftRight;
   static const caretDown = LucideIcons.chevronDown;
   static const qrCode = LucideIcons.qrCode;
+  static const lock = LucideIcons.lock;
+  static const wrench = LucideIcons.wrench;
 
   /// Widget-typed default so `IconData`-consuming call-sites keep working.
   static const IconData placeholder = LucideIcons.circle;
