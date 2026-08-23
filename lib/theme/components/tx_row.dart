@@ -271,13 +271,13 @@ class _RingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final rrect = RRect.fromRectAndRadius(
       Offset.zero & size,
-      const Radius.circular(10),
+      const Radius.circular(11),
     );
     canvas.drawRRect(
       rrect,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
+        ..strokeWidth = 2.5
         ..color = Palette.surface3,
     );
     if (fraction <= 0) return;
@@ -291,7 +291,7 @@ class _RingPainter extends CustomPainter {
       metric.extractPath(start, end),
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
+        ..strokeWidth = 2.5
         ..strokeCap = StrokeCap.round
         ..color = color,
     );

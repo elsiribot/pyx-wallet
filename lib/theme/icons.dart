@@ -48,6 +48,7 @@ abstract final class PyxIcons {
   static const warningCircle = LucideIcons.circleAlert;
   static const x = LucideIcons.x;
   static const xCircle = LucideIcons.circleX;
+  static const swap = LucideIcons.arrowLeftRight;
 
   /// Widget-typed default so `IconData`-consuming call-sites keep working.
   static const IconData placeholder = LucideIcons.circle;

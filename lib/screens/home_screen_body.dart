@@ -349,26 +349,28 @@ class _EmptyHistory extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 54, 24, 30),
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(24, 54, 24, 30),
       child: Column(
         children: [
           Opacity(
             opacity: 0.5,
             child: Icon(
-              PyxIcons.receipt,
+              PyxIcons.swap,
               size: 70,
               color: Palette.faint,
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Text(
-            'No activity yet',
-            style: const TextStyle(
+            'No transaction history yet',
+            textAlign: TextAlign.center,
+            style: TextStyle(
               fontFamily: Fonts.display,
               fontWeight: FontWeight.w500,
               fontSize: 32,
               color: Palette.faint,
+              height: 1.25,
             ),
           ),
         ],

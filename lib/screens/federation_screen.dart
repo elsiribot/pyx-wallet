@@ -403,7 +403,10 @@ class _FederationScreenState extends State<FederationScreen> {
                     amount: NumberFormat('#,###')
                         .format(sats)
                         .replaceAll(',', ' '),
-                    fiat: fiat == null ? null : '≈ ${fiat.amount}',
+                    // Prototype writes "≈ €3.45" — symbol tight to the number
+                    fiat: fiat == null
+                        ? null
+                        : '≈ ${fiat.amount.replaceFirst(' ', '')}',
                     masked: _masked,
                     payments: _payments,
                     onReceive: _onCreateInvoice,

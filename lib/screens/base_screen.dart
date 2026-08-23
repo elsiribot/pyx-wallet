@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:app_links/app_links.dart';
 import 'package:balanced_text/balanced_text.dart';
 import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +33,7 @@ class BaseScreen extends StatefulWidget {
 class _BaseScreenState extends State<BaseScreen> {
   List<FederationInfo> _federations = [];
   String? _currencyName;
+  StreamSubscription<Uri>? _linkSubscription;
 
   @override
   void initState() {
@@ -38,6 +41,33 @@ class _BaseScreenState extends State<BaseScreen> {
 
     _refreshFederations(autoNavigate: true);
     _loadCurrency();
+    _initInviteLinks();
+  }
+
+  /// The manifest declares the `fedimint:` scheme; accept federation invite
+  /// codes arriving as deep links (fedimint:<invite> or a raw fed1… code).
+  void _initInviteLinks() {
+    final appLinks = AppLinks();
+    _linkSubscription = appLinks.uriLinkStream.listen(_handleInviteLink);
+    appLinks.getInitialLink().then((uri) {
+      if (uri != null) _handleInviteLink(uri);
+    });
+  }
+
+  void _handleInviteLink(Uri uri) {
+    final raw = uri.toString();
+    final code = raw.startsWith('fedimint:')
+        ? raw.substring('fedimint:'.length)
+        : raw;
+    final invite = parseInviteCode(invite: code);
+    if (invite == null) return;
+    _handleJoinFederation(invite);
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadCurrency() async {

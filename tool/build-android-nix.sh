@@ -15,6 +15,13 @@ export RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384"
 cargo ndk -t arm64-v8a -t x86_64 --platform 24 \
   -o "$ROOT/android/app/src/main/jniLibs" build --release
 
+# libconduit.so links against the NDK's shared C++ runtime
+SYSROOT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib"
+cp "$SYSROOT/aarch64-linux-android/libc++_shared.so" \
+   "$ROOT/android/app/src/main/jniLibs/arm64-v8a/"
+cp "$SYSROOT/x86_64-linux-android/libc++_shared.so" \
+   "$ROOT/android/app/src/main/jniLibs/x86_64/"
+
 echo "📦 Building APK ($MODE)..."
 cd "$ROOT"
 flutter build apk "$MODE"

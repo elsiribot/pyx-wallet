@@ -29,6 +29,7 @@ cat >> "$TMP/p.html" <<EOF
 <style>.env-fab,.hint,.toast{display:none!important}</style>
 <script>
   CONFIG.stable=false;            // scope: stable balance module OFF
+  ${CONFIG_JS:-}
   stack=[{id:'home',p:{}}];
   if('$SCREEN'!=='home'){ stack.push({id:'$SCREEN', p:$PARAMS}); }
   render();
