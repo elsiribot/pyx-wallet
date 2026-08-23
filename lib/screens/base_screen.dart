@@ -11,15 +11,13 @@ import 'package:conduit/screens/federation_screen.dart';
 import 'package:conduit/screens/display_recovery_phrase_screen.dart';
 import 'package:conduit/screens/select_currency_screen.dart';
 import 'package:conduit/utils/notification_utils.dart';
-import 'package:conduit/utils/styles.dart';
+import 'package:conduit/theme/tokens.dart';
+import 'package:conduit/theme/components/buttons.dart';
+import 'package:conduit/theme/components/cards.dart';
 import 'package:conduit/utils/auth_utils.dart';
 import 'package:conduit/drawers/invite_scanner_drawer.dart';
 import 'package:conduit/drawers/leave_federation_drawer.dart';
 import 'package:conduit/drawers/recovery_drawer.dart';
-import 'package:conduit/widgets/bordered_list_widget.dart';
-import 'package:conduit/widgets/bleed_column_widget.dart';
-import 'package:conduit/widgets/section_header_widget.dart';
-import 'package:conduit/widgets/settings_card_widget.dart';
 
 class BaseScreen extends StatefulWidget {
   final ConduitClientFactory clientFactory;
@@ -94,72 +92,137 @@ class _BaseScreenState extends State<BaseScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Conduit')),
-    body: SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(0, 16, 0, 32),
-      child: BleedColumn(
+    body: SafeArea(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionHeader(title: 'Settings'),
-          BorderedList.column(
-            children: [_buildSeedPhraseCard(), _buildCurrencyCard()],
+          // Topbar: title + add-wallet scan (prototype `wallets`)
+          Padding(
+            padding:
+                const EdgeInsets.fromLTRB(Gaps.screenH, 6, Gaps.screenH, 14),
+            child: Row(
+              children: [
+                const Text('Wallets', style: Type.screenTitle),
+                const Spacer(),
+                IconBtn(
+                  onTap: _showScannerDrawer,
+                  child: const Icon(PyxIcons.plus),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-          if (_federations.isEmpty)
-            _buildOnboardingCard()
-          else
-            _buildFederationsListView(),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(
+                  Gaps.screenH, 0, Gaps.screenH, 26),
+              children: [
+                if (_federations.isEmpty)
+                  _buildOnboarding()
+                else ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 14),
+                    child: Text(
+                      'Switch between your wallets. Each wallet is held '
+                      'by a federation of independent guardians.',
+                      style: Type.cardSub.copyWith(fontSize: 13, height: 1.55),
+                    ),
+                  ),
+                  for (final federation in _federations) ...[
+                    _buildFederationCard(federation),
+                    const SizedBox(height: 10),
+                  ],
+                ],
+                const SectionLabel('Settings',
+                    margin: EdgeInsets.only(top: 18, bottom: 10)),
+                PyxCard(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: Gaps.cardPad, vertical: 2),
+                  child: Column(
+                    children: [
+                      _settingsRow(
+                        'Recovery Phrase',
+                        'Backup your wallet',
+                        _handleSeedPhraseTap,
+                      ),
+                      _settingsRow(
+                        'Default Currency',
+                        _currencyName ?? '',
+                        _handleCurrencyTap,
+                        last: true,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     ),
   );
 
-  Widget _buildOnboardingCard() {
-    return Column(
-      children: [
-        const SizedBox(height: 32),
-        TextButton(
-          onPressed: _showScannerDrawer,
-          child: Text(
-            'Join Federation',
-            style: mediumStyle.copyWith(
-              color: Theme.of(context).colorScheme.primary,
+  Widget _settingsRow(
+    String title,
+    String value,
+    VoidCallback onTap, {
+    bool last = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 15),
+        decoration: last
+            ? null
+            : const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Palette.border)),
+              ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(title,
+                style: Type.rowTitle.copyWith(fontWeight: FontWeight.w500)),
+            Row(
+              children: [
+                Text(value, style: Type.rowSub.copyWith(fontSize: 13)),
+                const SizedBox(width: 8),
+                const Icon(PyxIcons.caretRight,
+                    size: 16, color: Palette.faint),
+              ],
             ),
-          ),
+          ],
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: BalancedText(
-            'The federation cannot link payments to you or deduce your balance.',
-            textAlign: TextAlign.center,
-            style: smallStyle.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildFederationsListView() {
-    return BleedColumn(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SectionHeader(
-          title: 'Federations',
-          action: 'Add',
-          onAction: _showScannerDrawer,
-        ),
-        BorderedList(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _federations.length,
-          itemBuilder: (context, index) {
-            final federation = _federations[index];
-            return _buildFederationCard(federation);
-          },
-        ),
-      ],
+  Widget _buildOnboarding() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 40, bottom: 8),
+      child: Column(
+        children: [
+          const Opacity(
+            opacity: 0.5,
+            child:
+                Icon(PyxIcons.wallet, size: 64, color: Palette.faint),
+          ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: BalancedText(
+              'The federation cannot link payments to you or deduce '
+              'your balance.',
+              textAlign: TextAlign.center,
+              style: Type.cardSub.copyWith(fontSize: 13, height: 1.55),
+            ),
+          ),
+          const SizedBox(height: 24),
+          PyxButton.primary(
+            label: 'Join Federation',
+            onTap: _showScannerDrawer,
+          ),
+        ],
+      ),
     );
   }
 
@@ -218,33 +281,46 @@ class _BaseScreenState extends State<BaseScreen> {
     _navigateToClientScreen(client);
   }
 
-  Widget _buildSeedPhraseCard() {
-    return SettingsCard(
-      icon: PyxIcons.key,
-      title: 'Recovery Phrase',
-      subtitle: 'Backup your Wallet',
-      onTap: _handleSeedPhraseTap,
-    );
-  }
-
-  Widget _buildCurrencyCard() {
-    return SettingsCard(
-      icon: PyxIcons.currencyDollar,
-      title: 'Select Currency',
-      subtitle: _currencyName,
-      onTap: _handleCurrencyTap,
-    );
-  }
-
+  /// Wallet card (prototype `wallets` card rows, lines 1173-1187).
   Widget _buildFederationCard(FederationInfo federation) {
     final guardians = federation.guardians;
 
-    return SettingsCard(
-      icon: PyxIcons.wallet,
-      title: federation.name,
-      subtitle: '$guardians ${guardians == 1 ? 'Guardian' : 'Guardians'}',
-      onTap: () => _handleFederationTap(federation),
+    return GestureDetector(
       onLongPress: () => _showLeaveFederationDrawer(federation),
+      child: PyxCard(
+        onTap: () => _handleFederationTap(federation),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Palette.surface2,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(PyxIcons.wallet,
+                  size: 21, color: Palette.accent),
+            ),
+            const SizedBox(width: Gaps.rowGap),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(federation.name, style: Type.cardName),
+                  const SizedBox(height: 3),
+                  Text(
+                    '$guardians ${guardians == 1 ? 'Guardian' : 'Guardians'}',
+                    style: Type.cardSub,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(PyxIcons.caretRight,
+                size: 16, color: Palette.faint),
+          ],
+        ),
+      ),
     );
   }
 

@@ -2,6 +2,7 @@ import 'package:conduit/theme/icons.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:conduit/utils/styles.dart';
+import 'package:conduit/theme/tokens.dart';
 import 'package:conduit/screens/input_recovery_phrase_screen.dart';
 import 'package:conduit/screens/base_screen.dart';
 import 'package:conduit/bridge_generated.dart/lib.dart';
@@ -77,14 +78,16 @@ class _LandingScreenState extends State<LandingScreen> {
                                   color: Theme.of(context).colorScheme.primary,
                                 ),
                                 const SizedBox(width: 16),
-                                Text(name, style: heroStyle),
+                                Text(name,
+                                    style: Type.bigAmount.copyWith(fontSize: 34)),
                               ],
                             );
                           },
                         ),
                       ),
                       const SizedBox(height: 16),
-                      Text('Powered by Fedimint', style: mediumStyle),
+                      Text('Powered by Fedimint',
+                          style: Type.body.copyWith(color: Palette.muted)),
                     ],
                   ),
                 ),
