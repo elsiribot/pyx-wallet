@@ -3,6 +3,11 @@ name = "conduit"
 version = "0.6.0"
 edition = "2024"
 
+# cdylib for Android (cargo-ndk packages it as libconduit.so); rlib keeps
+# `cargo test` and the iOS static-link path working.
+[lib]
+crate-type = ["rlib", "cdylib", "staticlib"]
+
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(frb_expand)'] }
 

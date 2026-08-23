@@ -72,3 +72,7 @@ lib/bridge_generated.dart/
 **/target
 **/*.db/
 **/client.db.lock
+
+.cargo-tools/
+.direnv/
+docs/design/shots/

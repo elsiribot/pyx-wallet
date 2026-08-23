@@ -30,13 +30,18 @@ android {
 
     defaultConfig {
         applicationId = "app.conduit.wallet"
-        minSdk = flutter.minSdkVersion
+        // Native libs are built with cargo-ndk --platform 24 (POSIX_MADV_* in
+        // rocksdb needs API >= 23)
+        minSdk = maxOf(24, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
         ndk {
             abiFilters.add("arm64-v8a")
+            // x86_64 is only needed for the local redroid container used in
+            // the design-verification loop
+            abiFilters.add("x86_64")
         }
     }
 
