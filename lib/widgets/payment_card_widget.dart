@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:conduit/utils/styles.dart';
+import 'package:conduit/theme/tokens.dart';
 import 'package:intl/intl.dart';
 import 'package:conduit/bridge_generated.dart/events.dart';
 import 'package:conduit/utils/payment_utils.dart';
@@ -52,7 +53,7 @@ class PaymentCard extends StatelessWidget {
       contentPadding: listTilePadding,
       leading: IconChip(
         icon: PaymentTypeUtils.getDirectionIcon(event.incoming),
-        color: failed ? Colors.amber : null,
+        color: failed ? Palette.amber : null,
       ),
       // Stack the header/subheader inside title (rather than using subtitle) so
       // the tile keeps its original single-line height instead of growing into

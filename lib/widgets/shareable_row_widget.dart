@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:ellipsized_text/ellipsized_text.dart';
 import 'package:conduit/utils/styles.dart';
+import 'package:conduit/theme/tokens.dart';
 import 'package:conduit/widgets/icon_chip_widget.dart';
 
 /// A tappable row that displays shareable data (address, invoice, eCash token,
@@ -30,7 +31,7 @@ class ShareableRow extends StatelessWidget {
           EllipsizedText(
             data,
             type: EllipsisType.middle,
-            style: mediumStyle.copyWith(fontFamily: 'monospace'),
+            style: mediumStyle.copyWith(fontFamily: Fonts.display),
           ),
           Text(
             label,

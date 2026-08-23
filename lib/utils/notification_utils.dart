@@ -2,6 +2,7 @@ import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:overlay_support/overlay_support.dart';
 import 'package:conduit/utils/styles.dart';
+import 'package:conduit/theme/tokens.dart';
 import 'package:conduit/widgets/icon_chip_widget.dart';
 
 class NotificationUtils {
@@ -72,7 +73,7 @@ class NotificationUtils {
       'Error',
       message,
       PyxIcons.warning,
-      Colors.amber,
+      Palette.amber,
       _defaultNotificationDuration,
     );
   }
@@ -83,7 +84,7 @@ class NotificationUtils {
       'Success',
       message,
       PyxIcons.checkCircle,
-      Colors.green,
+      Palette.green,
       _defaultNotificationDuration,
     );
   }

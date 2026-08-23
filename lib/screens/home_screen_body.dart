@@ -242,7 +242,7 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           stops: [0, 0.8, 1],
-          colors: [Palette.bg, Palette.bg, Color(0x000B0D11)],
+          colors: [Palette.bg, Palette.bg, Palette.bgTransparent],
         ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: Gaps.screenH),

@@ -16,9 +16,6 @@ import 'package:conduit/bridge_generated.dart/lib.dart';
 import 'package:conduit/widgets/settings_card_widget.dart';
 import 'package:conduit/screens/receive_screen.dart';
 import 'package:conduit/screens/send_screen.dart';
-import 'package:conduit/screens/ecash_amount_screen.dart';
-import 'package:conduit/screens/onchain_address_screen.dart';
-import 'package:conduit/screens/wallet_v2_receive_screen.dart';
 import 'package:conduit/drawers/scanner_drawer.dart';
 import 'package:conduit/drawers/payment_details_drawer.dart';
 import 'package:conduit/screens/connection_status_screen.dart';
@@ -92,9 +89,16 @@ class _FederationScreenState extends State<FederationScreen> {
     });
   }
 
+  /// The home feed shows the full history (prototype home lists everything
+  /// down to "End of history"); the event stream only signals changes.
+  Future<void> _refreshHistory() async {
+    final payments = await widget.client.getPaymentHistory();
+    if (mounted) setState(() => _payments = payments);
+  }
+
   void _onPaymentsUpdate(RecentPaymentsUpdate update) {
     if (!mounted) return;
-    setState(() => _payments = update.payments);
+    _refreshHistory();
     if (update.notification case final notification?) {
       HapticFeedback.heavyImpact();
       if (!notification.success) {
@@ -194,51 +198,7 @@ class _FederationScreenState extends State<FederationScreen> {
     );
   }
 
-  void _onSendEcash() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => EcashAmountScreen(client: widget.client),
-      ),
-    );
-  }
 
-  void _onReceiveBitcoin() async {
-    try {
-      final v2Address = await widget.client.walletV2Receive();
-
-      if (!mounted) return;
-
-      if (v2Address != null) {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder:
-                (_) => WalletV2ReceiveScreen(
-                  address: v2Address,
-                  client: widget.client,
-                ),
-          ),
-        );
-      } else {
-        // Addresses already sorted ascending by Rust (oldest first, newest last)
-        final addressesList = await widget.client.onchainListAddresses();
-
-        if (!mounted) return;
-
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder:
-                (context) => OnchainAddressScreen(
-                  client: widget.client,
-                  addressesList: addressesList,
-                ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      NotificationUtils.showError(context, 'Failed to load address');
-    }
-  }
 
   void _onLightningAddress() {
     Navigator.of(context).push(
@@ -272,7 +232,7 @@ class _FederationScreenState extends State<FederationScreen> {
 
     return SettingsCard(
       icon: PyxIcons.moon,
-      iconColor: Colors.amber,
+      iconColor: Palette.amber,
       title: 'Expires on $formatted',
       subtitle:
           successor != null ? 'Tap to join successor' : 'Migrate your funds',

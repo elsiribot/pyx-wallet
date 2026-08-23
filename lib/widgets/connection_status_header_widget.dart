@@ -1,3 +1,4 @@
+import 'package:conduit/theme/tokens.dart';
 import 'package:conduit/theme/icons.dart';
 import 'package:flutter/material.dart';
 import 'package:conduit/utils/styles.dart';
@@ -27,7 +28,7 @@ class ConnectionStatusHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final operational = online >= _threshold;
-    final color = operational ? Colors.green : Colors.amber;
+    final color = operational ? Palette.green : Palette.amber;
 
     return ListTile(
       contentPadding: listTilePadding,
@@ -41,7 +42,7 @@ class ConnectionStatusHeader extends StatelessWidget {
           Text(
             operational ? 'Online' : 'Offline',
             style: smallStyle.copyWith(
-              color: operational ? Colors.green : null,
+              color: operational ? Palette.green : null,
             ),
           ),
         ],

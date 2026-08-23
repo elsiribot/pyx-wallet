@@ -37,6 +37,18 @@ abstract final class Palette {
   static const scrim = Color(0x8C040609); // rgba(4,6,9,.55)
   static const logoAvatarBg = Color(0xFF0D1426); // `.logo-avatar` background
   static const shadow = Color(0xCC000000); // drop shadows (~.8 black)
+  static const bgTransparent = Color(0x000B0D11); // bg at 0 alpha (gradients)
+
+  /// Guardian avatar hues (prototype FEDS guardian colors).
+  static const guardianPalette = [
+    teal,
+    Color(0xFF3B6EA5),
+    moss,
+    Color(0xFF8A6D3B),
+    Color(0xFF7A4B8C),
+    Color(0xFFB0612E),
+    Color(0xFF3F7E8C),
+  ];
 }
 
 abstract final class Fonts {
