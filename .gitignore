@@ -76,3 +76,4 @@ lib/bridge_generated.dart/
 .cargo-tools/
 .direnv/
 docs/design/shots/
+android/build/
