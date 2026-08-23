@@ -45,7 +45,7 @@ class _BaseScreenState extends State<BaseScreen> {
   }
 
   /// The manifest declares the `fedimint:` scheme; accept federation invite
-  /// codes arriving as deep links (fedimint:<invite> or a raw fed1… code).
+  /// codes arriving as deep links (`fedimint:{invite}` or a raw fed1… code).
   void _initInviteLinks() {
     final appLinks = AppLinks();
     _linkSubscription = appLinks.uriLinkStream.listen(_handleInviteLink);

@@ -14,7 +14,7 @@ import 'package:conduit/bridge_generated.dart/events.dart';
 import 'package:conduit/bridge_generated.dart/factory.dart';
 import 'package:conduit/bridge_generated.dart/lib.dart';
 import 'package:conduit/widgets/settings_card_widget.dart';
-import 'package:conduit/screens/invoice_amount_screen.dart';
+import 'package:conduit/screens/receive_screen.dart';
 import 'package:conduit/screens/ecash_amount_screen.dart';
 import 'package:conduit/screens/onchain_address_screen.dart';
 import 'package:conduit/screens/wallet_v2_receive_screen.dart';
@@ -174,7 +174,10 @@ class _FederationScreenState extends State<FederationScreen> {
   void _onCreateInvoice() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => InvoiceAmountScreen(client: widget.client),
+        builder: (_) => ReceiveScreen(
+          client: widget.client,
+          clientFactory: widget.clientFactory,
+        ),
       ),
     );
   }
