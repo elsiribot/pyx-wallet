@@ -7,6 +7,7 @@ import 'package:conduit/bridge_generated.dart/factory.dart';
 import 'package:conduit/bridge_generated.dart/lib.dart';
 import 'package:conduit/bridge_generated.dart/lnurl.dart';
 import 'package:conduit/drawers/scanner_drawer.dart';
+import 'package:conduit/screens/ecash_amount_screen.dart';
 import 'package:conduit/theme/components/buttons.dart';
 import 'package:conduit/theme/components/inputs.dart';
 import 'package:conduit/theme/components/slide_to_send.dart';
@@ -352,6 +353,28 @@ class _SendScreenState extends State<SendScreen> {
                   SlideToSend(
                     enabled: _ready,
                     onConfirm: _confirmSend,
+                  ),
+                  // Offline hand-off path; the prototype exposes ecash on
+                  // the receive side only, conduit can also mint and send.
+                  Padding(
+                    padding: const EdgeInsets.only(top: 18),
+                    child: Center(
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                EcashAmountScreen(client: widget.client),
+                          ),
+                        ),
+                        child: Text(
+                          'Send as Ecash instead',
+                          style: Type.button.copyWith(
+                            fontSize: 13,
+                            color: Palette.accent,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),

@@ -53,6 +53,7 @@ abstract final class PyxIcons {
   static const qrCode = LucideIcons.qrCode;
   static const lock = LucideIcons.lock;
   static const wrench = LucideIcons.wrench;
+  static const search = LucideIcons.search;
 
   /// Widget-typed default so `IconData`-consuming call-sites keep working.
   static const IconData placeholder = LucideIcons.circle;
