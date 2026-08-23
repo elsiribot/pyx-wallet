@@ -1,0 +1,2576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Eric's Wallet — Fedimint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+:root{
+  --bg:#0B0D11;
+  --surface:#14171C;
+  --surface-2:#1B1F26;
+  --surface-3:#21262E;
+  --border:#262B33;
+  --border-strong:#3A4049;
+  --text:#E8E6DF;     /* stone */
+  --muted:#9499A1;    /* slate */
+  --faint:#5A6069;    /* steel */
+  --accent:#FF9410;   /* primary orange */
+  --amber:#FFB020;
+  --burnt:#FF5A1F;
+  --moss:#687C4D;
+  --teal:#2C8C76;
+  --green:#46CF7C;
+  --red:#FF6A4D;
+  --display:'Space Grotesk',sans-serif;
+  --ui:'Inter',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:var(--ui);
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #15181d 0%, transparent 60%),
+    var(--bg);
+  color:var(--text);
+  display:flex;flex-direction:column;align-items:center;
+  min-height:100vh;
+  padding:28px 16px 40px;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--accent);color:#000}
+
+/* ===== Stage chrome ===== */
+.stage-head{display:flex;align-items:center;gap:14px;margin-bottom:22px;flex-wrap:wrap;justify-content:center}
+.stage-title{font-family:var(--display);font-weight:700;letter-spacing:-0.03em;font-size:22px;text-transform:uppercase}
+.stage-sub{font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.18em;border-left:1px solid var(--border-strong);padding-left:14px}
+
+/* ===== Stage: device + control panel ===== */
+.stage{display:flex;gap:26px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+
+.controls{
+  width:248px;background:var(--surface);border:1px solid var(--border);border-radius:20px;
+  padding:18px 18px 8px;align-self:flex-start;
+}
+.controls h3{
+  font-family:var(--display);font-size:12px;text-transform:uppercase;letter-spacing:.16em;
+  color:var(--muted);font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:9px;
+}
+.controls h3 svg{color:var(--accent)}
+.ctl-sub{font-size:11px;color:var(--faint);letter-spacing:.02em;margin-bottom:12px;line-height:1.5}
+.ctl{padding:15px 0;border-top:1px solid var(--border)}
+.ctl-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ctl-label{font-size:13.5px;font-weight:600;color:var(--text)}
+.ctl-val{font-family:var(--display);font-weight:600;font-size:13px;color:var(--accent)}
+.ctl-note{font-size:10.5px;color:var(--faint);margin-top:8px;letter-spacing:.01em}
+.ctl-note.live{color:var(--green)}
+.dial-switch{
+  width:44px;height:25px;border-radius:999px;background:var(--surface-3);border:1px solid var(--border-strong);
+  position:relative;cursor:pointer;flex:0 0 auto;transition:background .18s,border-color .18s;padding:0;
+}
+.dial-switch .knob{position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--faint);transition:left .18s,background .18s}
+.dial-switch.on{background:var(--accent);border-color:var(--accent)}
+.dial-switch.on .knob{left:21px;background:#1a0e00}
+.dial-range{-webkit-appearance:none;appearance:none;width:100%;height:5px;border-radius:3px;margin-top:14px;
+  background:linear-gradient(90deg,var(--accent) 0,var(--accent) var(--fill,70%),var(--surface-3) var(--fill,70%));cursor:pointer}
+.dial-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;background:var(--accent);border:3px solid var(--bg);box-shadow:0 0 0 1px var(--border-strong)}
+.dial-range::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);border:3px solid var(--bg)}
+
+/* ===== Device ===== */
+.device{
+  width:390px;height:844px;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:46px;
+  padding:11px;
+  box-shadow:0 0 0 2px #05070a, 0 40px 90px -30px rgba(0,0,0,.9), inset 0 0 0 1px rgba(255,255,255,.02);
+  position:relative;
+  max-width:100%;
+}
+.screen{
+  position:relative;
+  width:100%;height:100%;
+  background:var(--bg);
+  border-radius:36px;
+  overflow:hidden;
+  display:flex;flex-direction:column;
+}
+/* status bar */
+.statusbar{
+  height:46px;flex:0 0 46px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 26px 0 30px;font-size:14px;font-weight:600;color:var(--text);
+  font-family:var(--display);
+  z-index:5;
+}
+.statusbar .icons{display:flex;align-items:center;gap:6px}
+.statusbar .icons svg{display:block}
+
+/* nav header inside screens */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:6px 22px 14px}
+.topbar h1{font-family:var(--display);font-weight:700;font-size:27px;letter-spacing:-0.02em}
+.topbar.centered{position:relative}
+.topbar.centered .left,.topbar.centered>div:last-child{min-width:42px;flex:0 0 auto;z-index:1}
+.topbar.centered .topbar-title{
+  position:absolute;left:0;right:0;top:6px;text-align:center;pointer-events:none;
+  font-size:21px;line-height:38px;white-space:nowrap;
+}
+.topbar .left{display:flex;align-items:center;gap:12px}
+.iconbtn{
+  width:38px;height:38px;border-radius:11px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;
+  transition:.15s;
+}
+.iconbtn:hover{border-color:var(--border-strong);background:var(--surface-2)}
+.iconbtn.bare{border:none;background:transparent}
+.iconbtn.bare:hover{background:var(--surface)}
+
+/* scroll body */
+.body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:0 22px 26px;scrollbar-width:none;overflow-anchor:none}
+.body::-webkit-scrollbar{display:none}
+
+/* labels */
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.16em;color:var(--faint);font-weight:600}
+.section-label{display:flex;align-items:center;justify-content:space-between;margin:22px 0 12px}
+.section-label .label{color:var(--muted)}
+.viewall{display:flex;align-items:center;gap:2px;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;background:none;border:none;font-family:var(--ui)}
+
+/* balance block */
+.balance-wrap{padding:8px 0 4px}
+.balance-row{display:flex;align-items:baseline;gap:10px}
+.balance{font-family:var(--display);font-weight:700;font-size:46px;letter-spacing:-0.03em;line-height:1}
+.balance .unit{font-size:18px;color:var(--muted);font-weight:500;letter-spacing:0}
+.balance-fiat{color:var(--muted);font-size:15px;margin-top:10px;font-family:var(--display);font-weight:500}
+.eye{margin-left:auto;align-self:center}
+
+/* buttons */
+.btn-row{display:flex;gap:12px;margin:20px 0 4px}
+.btn{
+  flex:1;border:none;cursor:pointer;font-family:var(--ui);font-weight:600;font-size:15px;
+  border-radius:13px;padding:15px;display:flex;align-items:center;justify-content:center;gap:8px;
+  transition:.15s;color:var(--text);
+}
+.btn svg{display:block}
+.btn-primary{background:var(--accent);color:#1a0e00}
+.btn-primary:hover{background:#ffa838}
+.btn-ghost{background:var(--surface);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--surface-2);border-color:var(--border-strong)}
+.btn-wide{width:100%;flex:none}
+.btn-lg{padding:17px;font-size:16px}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+
+/* generic card */
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:16px;transition:.15s;
+}
+.card.tap{cursor:pointer}
+.card.tap:hover{border-color:var(--border-strong);background:var(--surface-2)}
+.card.active-fed{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+
+/* federation row */
+.fed{display:flex;align-items:center;gap:13px}
+.fed .avatar{flex:0 0 42px}
+.avatar{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-weight:700;font-size:16px;overflow:hidden}
+.logo-avatar{background:#0d1426;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.logo-avatar img{display:block;object-fit:contain}
+.fed .meta{flex:1;min-width:0}
+.fed .name{font-weight:600;font-size:15px;font-family:var(--display);letter-spacing:-0.01em}
+.fed .sub{font-size:12.5px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:0 0 auto}
+.dot.on{background:var(--green)}.dot.off{background:var(--burnt)}.dot.warn{background:var(--amber)}
+.s-on{color:var(--green)}.s-off{color:var(--burnt)}.s-warn{color:var(--amber)}
+.chev{color:var(--faint);flex:0 0 auto}
+
+/* activity / list rows */
+.tx{display:flex;align-items:center;gap:13px;padding:13px 0;border-bottom:1px solid var(--border)}
+.tx:last-child{border-bottom:none}
+.tx .ic{position:relative;width:38px;height:38px;border-radius:11px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex:0 0 auto;color:var(--muted)}
+/* small asset badge on the corner of each entry's icon */
+.tx-asset{position:absolute;bottom:-4px;right:-4px;width:17px;height:17px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-weight:700;font-size:10px;border:2px solid var(--bg)}
+.tx-asset.btc{background:var(--accent);color:#1a0e00}
+.tx-asset.usd{background:var(--green);color:#06301a}
+/* pending indicator: an accent arc that travels around the icon's rounded-rect edge
+   (same path technique as the federation status ring, but spinning) */
+.tx-ring{position:absolute;inset:-3px;width:calc(100% + 6px);height:calc(100% + 6px);pointer-events:none;overflow:visible}
+.tx-ring-track{fill:none;stroke:var(--surface-3);stroke-width:3}
+.tx-ring-prog{fill:none;stroke:var(--accent);stroke-width:3;stroke-linecap:round;stroke-dasharray:22 78;animation:txspin 1.15s linear infinite}
+@keyframes txspin{from{stroke-dashoffset:0}to{stroke-dashoffset:-100}}
+.tx .t2 .pending-tag{color:var(--amber);font-weight:600}
+.tx .info{flex:1;min-width:0}
+.tx .t1{font-weight:600;font-size:14.5px}
+.tx .t2{font-size:12px;color:var(--faint);margin-top:2px}
+.tx .amt{text-align:right;font-family:var(--display);font-weight:600;font-size:14.5px;white-space:nowrap}
+.tx .amt .u{font-size:11px;color:var(--faint);font-weight:500;margin-left:2px}
+.amt.pos{color:var(--green)}.amt.neg{color:var(--red)}
+/* swap rows: both legs stacked into the same row height (same amount font as other rows) */
+.amt-swap{display:flex;flex-direction:column;align-items:flex-end;gap:0}
+.amt-swap .amt{line-height:1.18}
+
+/* segmented toggle */
+.seg{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:4px;gap:4px}
+.seg button{
+  flex:1;border:none;background:none;color:var(--muted);font-family:var(--ui);font-weight:600;
+  font-size:14px;padding:11px;border-radius:9px;cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.seg button.on{background:var(--accent);color:#1a0e00}
+.seg.sm button{padding:8px 12px;font-size:12.5px}
+.seg.sm button.on{background:var(--surface-3);color:var(--text);box-shadow:0 0 0 1px var(--border-strong)}
+
+/* chips */
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{font-size:12px;font-weight:600;padding:7px 13px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;white-space:nowrap}
+.chip.on{background:var(--accent);color:#1a0e00;border-color:var(--accent)}
+
+/* data rows (key/value) */
+.drow{display:flex;align-items:center;justify-content:space-between;padding:15px 0;border-bottom:1px solid var(--border)}
+.drow:last-child{border-bottom:none}
+.drow .k{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--faint);font-weight:600}
+.drow .v{font-weight:600;font-size:14.5px;font-family:var(--display)}
+
+/* inputs */
+.field{margin-top:16px}
+.field > .label{display:block;margin-bottom:8px}
+.input{
+  width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:15px;color:var(--text);font-family:var(--display);font-size:18px;font-weight:600;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+}
+.input input{background:none;border:none;color:var(--text);font-family:var(--display);font-size:18px;font-weight:600;flex:1;min-width:0;outline:none}
+.input input::placeholder{color:var(--faint)}
+.input .suffix{color:var(--muted);font-size:14px;font-weight:500}
+.input.mono input,.input.mono{font-family:var(--display);font-size:15px;letter-spacing:0}
+
+/* QR */
+.qr-wrap{background:#fff;border-radius:18px;padding:18px;display:flex;align-items:center;justify-content:center;position:relative;margin:0 auto 4px;width:100%;aspect-ratio:1}
+.qr-wrap > svg{width:100%;height:100%;display:block}
+.qr-bolt{position:absolute;width:50px;height:50px;border-radius:12px;background:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 6px #fff}
+/* placeholder shown before an amount is entered (no code to encode yet) */
+.qr-wrap.qr-empty{background:var(--surface);border:1px dashed var(--border-strong)}
+.qr-ph{display:flex;flex-direction:column;align-items:center;gap:13px;color:var(--faint);text-align:center;padding:24px}
+.qr-ph svg{width:48px;height:48px;opacity:.55}
+.qr-ph span{font-size:13.5px;letter-spacing:.03em}
+.qr-spinner{width:46px;height:46px;border-radius:50%;border:3px solid var(--surface-3);border-top-color:var(--accent);animation:qrspin .8s linear infinite}
+@keyframes qrspin{to{transform:rotate(360deg)}}
+
+/* receive amount entry + currency selector */
+.recv-amt-row{display:flex;align-items:baseline;justify-content:center;gap:12px;margin:32px 0 6px;flex-wrap:nowrap}
+/* sats equivalent under the amount; min-height reserves the row so the QR never shifts */
+.recv-sub{text-align:center;color:var(--muted);font-family:var(--display);font-weight:500;font-size:14px;min-height:20px;line-height:20px;margin:0 0 26px}
+.recv-amt-input{background:none;border:none;outline:none;color:var(--text);font-family:var(--display);font-weight:700;font-size:40px;letter-spacing:-0.03em;text-align:right;padding:0;min-width:18px}
+.recv-amt-input::placeholder{color:var(--faint)}
+.recv-unit{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-family:var(--display);font-weight:600;font-size:14px;padding:8px 12px;border-radius:10px;cursor:pointer;transition:.15s;flex:0 0 auto;align-self:center}
+.recv-unit:hover{border-color:var(--border-strong);color:var(--text)}
+.recv-unit .chevd{font-size:13px;line-height:1;opacity:.7;margin-top:-3px}
+
+/* code field: the copyable address/invoice with inline copy + share actions */
+.code-field{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:5px 5px 5px 16px;margin-top:16px;font-family:var(--display)}
+.code-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;cursor:pointer;letter-spacing:0}
+.code-acts{display:flex;align-items:center;gap:2px;flex:0 0 auto;border-left:1px solid var(--border);padding-left:5px}
+.code-act{width:40px;height:40px;border:none;background:none;color:var(--muted);display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:10px;transition:.15s}
+.code-act:hover{background:var(--surface-2);color:var(--text)}
+.code-act:active{opacity:.55}
+
+/* currency picker (bottom-sheet layover) */
+.cur-search-wrap{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.cur-search-wrap svg{color:var(--faint);flex:0 0 auto}
+.cur-search{flex:1;min-width:0;background:none;border:none;outline:none;color:var(--text);font-family:var(--ui);font-size:15px}
+.cur-search::placeholder{color:var(--faint)}
+.cur-list{max-height:44vh;overflow-y:auto;margin:0 -8px;padding:0 8px;scrollbar-width:none}
+.cur-list::-webkit-scrollbar{display:none}
+.cur-row{display:flex;align-items:center;gap:13px;width:100%;background:none;border:none;cursor:pointer;padding:11px 8px;border-radius:11px;text-align:left;font-family:var(--ui);transition:background .12s}
+.cur-row:hover{background:var(--surface-2)}
+.cur-row.on{background:var(--surface-2)}
+.cur-flag{font-size:21px;width:28px;text-align:center;flex:0 0 auto;line-height:1}
+.cur-flag.btc{color:var(--accent);font-family:var(--display);font-weight:700;font-size:18px}
+.cur-code{font-family:var(--display);font-weight:600;font-size:14.5px;color:var(--text);width:50px;flex:0 0 auto}
+.cur-name{font-size:13.5px;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cur-check{color:var(--accent);flex:0 0 auto;display:flex}
+.cur-sep{height:1px;background:var(--border);margin:8px 8px}
+.cur-empty{text-align:center;color:var(--faint);padding:26px;font-size:13.5px}
+
+/* Send: address-book dropdown + gated amount */
+.ab-drop{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:14px;overflow:hidden auto;box-shadow:0 20px 46px -16px rgba(0,0,0,.78);max-height:300px;scrollbar-width:none}
+.ab-drop::-webkit-scrollbar{display:none}
+.ab-item{display:flex;align-items:center;gap:12px;padding:12px 14px;cursor:pointer;font-family:var(--ui)}
+.ab-item:hover{background:var(--surface-3)}
+.ab-add{color:var(--accent);font-weight:600;font-size:14px}
+.ab-add svg{width:18px;height:18px;flex:0 0 auto}
+.ab-sep{height:1px;background:var(--border)}
+.ab-av{width:34px;height:34px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:var(--surface-3);font-family:var(--display);font-weight:700;font-size:13px;color:var(--muted)}
+.ab-name{font-weight:600;font-size:14px}
+.ab-addr{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ab-empty{padding:16px 14px;color:var(--faint);font-size:13px;text-align:center}
+.input.is-disabled{opacity:.5}
+.input .lock-ic{color:var(--faint);display:flex;align-items:center;margin-right:2px}
+/* tappable amount-currency selector inside the amount input */
+.send-unit{display:inline-flex;align-items:center;gap:5px;background:none;border:none;color:var(--muted);font-family:var(--ui);font-size:14px;font-weight:500;cursor:pointer;padding:4px 2px;flex:0 0 auto}
+.send-unit:hover{color:var(--text)}
+.send-unit .chevd{font-size:12px;line-height:1;opacity:.7;margin-top:-2px}
+.send-unit.locked{pointer-events:none;color:var(--muted)}
+.send-unit.locked .chevd{display:none}
+/* slide-to-send confirm control */
+.slide-send{margin-top:26px;user-select:none;-webkit-user-select:none}
+.slide-track{position:relative;height:58px;border-radius:15px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;transition:background .25s}
+.slide-label{font-family:var(--ui);font-weight:600;font-size:15px;color:var(--muted);pointer-events:none;letter-spacing:.02em}
+.slide-knob{position:absolute;left:0;top:0;height:100%;width:66px;border-radius:14px;background:var(--accent);color:#1a0e00;display:flex;align-items:center;justify-content:center;cursor:grab;touch-action:none;transition:left .28s cubic-bezier(.22,.61,.36,1);box-shadow:0 6px 16px -6px rgba(255,148,16,.6)}
+.slide-knob.dragging{transition:none;cursor:grabbing}
+.slide-track.done{background:var(--green);border-color:var(--green)}
+.slide-track.done .slide-knob{background:var(--green);color:#06301a;box-shadow:none}
+.slide-track.done .slide-label{color:#06301a}
+.slide-send.disabled{opacity:.45;pointer-events:none}
+
+/* big amount display (receive) */
+.big-amt{font-family:var(--display);font-weight:700;font-size:40px;letter-spacing:-0.03em;text-align:center;display:flex;align-items:baseline;justify-content:center;gap:8px;margin:6px 0}
+.big-amt .unit{font-size:16px;color:var(--muted);font-weight:500}
+
+/* badge */
+.badge{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border)}
+
+/* bottom nav */
+.tabbar{
+  flex:0 0 auto;display:flex;border-top:1px solid var(--border);background:var(--bg);
+  padding:10px 8px 24px;
+}
+.tab{flex:1;background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--faint);font-family:var(--ui)}
+.tab span{font-size:10.5px;font-weight:600;letter-spacing:.02em}
+.tab.on{color:var(--accent)}
+.tab svg{display:block}
+
+/* misc helpers */
+.muted{color:var(--muted)}
+.faint{color:var(--faint)}
+.mono{font-family:var(--display)}
+.center{text-align:center}
+.divider{height:1px;background:var(--border);margin:18px 0}
+.spacer{height:18px}
+.note-pill{width:36px;height:36px;border-radius:9px;border:1px solid var(--accent);background:rgba(255,148,16,.08);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:0 0 auto}
+.stat-grid{display:flex;gap:10px;margin-top:8px}
+
+/* screen transition */
+.body-anim{animation:slidein .26s cubic-bezier(.22,.61,.36,1)}
+@keyframes slidein{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+
+.hint{margin-top:18px;font-size:11px;color:var(--faint);text-align:center;letter-spacing:.04em;max-width:390px}
+.toast{
+  position:fixed;bottom:34px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:var(--surface-2);border:1px solid var(--border-strong);color:var(--text);
+  padding:13px 20px;border-radius:12px;font-size:13.5px;font-weight:500;opacity:0;pointer-events:none;
+  transition:.25s;z-index:99;box-shadow:0 18px 40px -12px rgba(0,0,0,.8)
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast b{color:var(--accent)}
+
+/* ===== dual balance + collapsing header ===== */
+/* opaque header that always occludes the list behind it, fading to transparent only at its
+   bottom edge so rows dissolve gradually as they scroll underneath the preview */
+.bal-sticky{position:sticky;top:0;z-index:4;min-height:98px;
+  background:linear-gradient(to bottom, var(--bg) 0, var(--bg) calc(100% - 36px), transparent 100%)}
+.bal-compact{position:absolute;left:0;right:0;top:0;height:54px;z-index:2;display:flex;align-items:center;gap:16px;opacity:0;pointer-events:none;cursor:pointer}
+.c-asset{display:flex;align-items:center;gap:8px}
+.c-asset .asset-sym{width:22px;height:22px;font-size:12px}
+.c-val{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:-0.02em;line-height:1}
+.c-val .c-unit{font-size:12px;color:var(--muted);font-weight:500}
+.c-div{width:1px;height:22px;background:var(--border);flex:0 0 auto}
+.maskable{transition:opacity .15s ease}
+.maskable.masking{opacity:0}
+.bal-large{overflow:hidden;position:relative;z-index:1;overflow-anchor:none;will-change:max-height,opacity}
+/* two first-class asset cards + exchange node */
+.asset-stack{position:relative;display:flex;flex-direction:column;gap:12px;margin-top:6px}
+.asset-stack.solo{margin:24px 0 16px}   /* single BTC card: give it room top & bottom */
+.asset-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:15px 16px}
+.asset-head{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+.asset-badge{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-weight:700;font-size:14px;flex:0 0 auto}
+.asset-badge.btc{background:rgba(255,148,16,.16);color:var(--accent)}
+.asset-badge.usd{background:rgba(70,207,124,.15);color:var(--green)}
+.asset-opt{margin-left:auto;font-size:10px;text-transform:uppercase;letter-spacing:.14em;color:var(--faint);border:1px solid var(--border);padding:3px 7px;border-radius:6px}
+/* symbol-in-front amount (no heading row) */
+.asset-amt{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:31px;letter-spacing:-0.025em;line-height:1}
+.asset-amt .unit{font-size:15px;color:var(--muted);font-weight:500;letter-spacing:0}
+.asset-sym{display:inline-flex;align-items:center;justify-content:center;width:27px;height:27px;border-radius:7px;font-size:15px;font-weight:700;flex:0 0 auto}
+.asset-sym.btc{background:rgba(255,148,16,.16);color:var(--accent)}
+.asset-sym.usd{background:rgba(70,207,124,.15);color:var(--green)}
+.asset-fiat{color:var(--muted);font-size:13px;font-family:var(--display);font-weight:500;margin-top:8px}
+.stable-tag{color:var(--faint);font-weight:500}
+.asset-actions{display:flex;gap:10px;margin-top:14px}
+.asset-btn{flex:0 0 auto;padding:10px 16px;font-size:14px;border-radius:11px}
+.asset-btn svg{width:16px;height:16px}
+.exchange-btn{
+  position:absolute;right:16px;top:50%;transform:translateY(-50%);
+  width:54px;height:54px;border-radius:50%;background:var(--accent);color:#1a0e00;
+  border:5px solid var(--bg);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:3;
+  box-shadow:0 8px 20px -6px rgba(255,148,16,.55);transition:background .15s,transform .15s;
+}
+.exchange-btn svg{width:23px;height:23px}
+.exchange-btn:hover{background:#ffa838;transform:translateY(-50%) scale(1.07)}
+.act-group-label{display:flex;align-items:center;gap:14px;margin:24px 0 10px}
+.act-group-label .label{color:var(--muted);flex:0 0 auto}
+.act-group-label::after{content:"";flex:1 1 auto;height:1px;background:var(--border)}
+.asset-pill{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--text);background:var(--surface);border:1px solid var(--border);padding:7px 13px 7px 8px;border-radius:10px;font-family:var(--ui)}
+.asset-pill .asset-badge{width:20px;height:20px;font-size:12px;border-radius:6px}
+
+/* exchange screen */
+.ex-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px}
+.ex-flip-wrap{position:relative;height:12px}
+.ex-flip{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:46px;height:46px;border-radius:50%;background:var(--surface-2);border:5px solid var(--bg);color:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:3;transition:.15s}
+.ex-flip:hover{border-color:var(--bg);background:var(--surface-3);transform:translate(-50%,-50%) rotate(180deg)}
+.ex-amt-input{width:100%;background:none;border:none;outline:none;color:var(--text);font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:-0.025em}
+.ex-amt-input::placeholder{color:var(--faint)}
+
+.fed-top{position:relative;overflow:visible;border:none}
+.fed-top-av{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-family:var(--display);font-weight:700}
+/* guardian status ring around the federation button */
+.fed-ring{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.fed-ring-track{fill:none;stroke:var(--surface-3);stroke-width:3}
+.fed-ring-prog{fill:none;stroke-width:3;stroke-linecap:round;transition:stroke-dasharray .3s ease,stroke .3s ease}
+
+.jump-top{
+  position:absolute;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);
+  background:var(--surface-2);border:1px solid var(--border-strong);color:var(--text);
+  padding:11px 18px;border-radius:999px;font-size:13px;font-weight:600;font-family:var(--ui);
+  display:flex;align-items:center;gap:7px;cursor:pointer;opacity:0;pointer-events:none;
+  transition:opacity .22s,transform .22s;z-index:6;box-shadow:0 14px 34px -12px #000;
+}
+.jump-top.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+
+/* overlaid QR scan button (home only; swaps out for the jump-to-top button) */
+.scan-fab{
+  position:absolute;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);
+  width:58px;height:58px;border-radius:50%;border:none;
+  background:var(--accent);color:#1a0e00;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;
+  transition:opacity .22s,transform .22s,filter .15s;
+  z-index:6;box-shadow:0 16px 36px -10px rgba(255,148,16,.5),0 6px 16px -6px #000;
+}
+.scan-fab.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+.scan-fab:hover{filter:brightness(1.07)}
+.scan-fab:active{transform:translateX(-50%) scale(.94)}
+
+/* QR scanner viewfinder */
+.scanview{margin-top:10px;display:flex;flex-direction:column;align-items:center}
+.scan-frame{position:relative;width:100%;aspect-ratio:1;border-radius:24px;background:radial-gradient(circle at 50% 38%,#10161f,#070a0e);overflow:hidden;box-shadow:inset 0 0 0 1px var(--border)}
+.cnr{position:absolute;width:34px;height:34px;border:3px solid var(--accent)}
+.cnr.tl{top:14px;left:14px;border-right:none;border-bottom:none;border-radius:11px 0 0 0}
+.cnr.tr{top:14px;right:14px;border-left:none;border-bottom:none;border-radius:0 11px 0 0}
+.cnr.bl{bottom:14px;left:14px;border-right:none;border-top:none;border-radius:0 0 0 11px}
+.cnr.br{bottom:14px;right:14px;border-left:none;border-top:none;border-radius:0 0 11px 0}
+.scan-line{position:absolute;left:18px;right:18px;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);box-shadow:0 0 12px 1px var(--accent);animation:scanmove 2.6s ease-in-out infinite}
+@keyframes scanmove{0%,100%{top:7%}50%{top:91%}}
+/* animated-QR capture progress (Ecash receive) */
+.scan-progress{margin-top:26px}
+.scan-progress-track{height:8px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+.scan-progress-fill{height:100%;width:0;border-radius:999px;background:var(--accent);transition:width .4s linear}
+.scan-progress-meta{display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:12.5px;color:var(--muted)}
+/* Ecash claiming state (after the animated QR is fully captured) */
+.claim-stage{display:flex;flex-direction:column;align-items:center;text-align:center;padding:64px 8px 8px}
+.claim-spin{width:56px;height:56px;border-radius:50%;border:4px solid var(--surface-3);border-top-color:var(--accent);animation:qrspin .8s linear infinite}
+.claim-amt{font-family:var(--display);font-weight:700;font-size:42px;letter-spacing:-0.03em;line-height:1;margin-top:32px}
+.claim-amt .unit{font-size:16px;color:var(--muted);font-weight:500;margin-left:3px}
+.claim-fiat{color:var(--muted);font-family:var(--display);font-weight:500;font-size:15px;margin-top:11px}
+.claim-status{color:var(--accent);font-weight:600;font-size:13px;letter-spacing:.05em;margin-top:20px}
+
+/* empty transaction history placeholder */
+.empty-state{display:flex;flex-direction:column;align-items:center;text-align:center;padding:54px 24px 30px;color:var(--faint)}
+.empty-ic{width:70px;height:70px;display:flex;align-items:center;justify-content:center;color:var(--faint);opacity:.5}
+.empty-ic svg{width:70px;height:70px}
+.empty-title{font-family:var(--display);font-weight:500;font-size:32px;color:var(--faint)}
+
+/* federation modules */
+.mod-list{display:flex;flex-wrap:wrap;gap:9px}
+.mod-pill{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:9px 13px 9px 11px;font-size:13.5px;font-weight:500}
+.mod-pill svg{color:var(--accent);flex:0 0 auto}
+
+/* guardian connection bottom sheet (scoped inside the device screen) */
+.sheet-back{position:absolute;inset:0;background:rgba(4,6,9,.55);opacity:0;pointer-events:none;transition:opacity .25s;z-index:20;backdrop-filter:blur(2px)}
+.sheet-back.show{opacity:1;pointer-events:auto}
+.sheet{
+  position:absolute;left:0;right:0;bottom:0;z-index:21;
+  background:var(--surface);border-top:1px solid var(--border-strong);
+  border-radius:26px 26px 0 0;padding:8px 22px 30px;
+  transform:translateY(110%);transition:transform .32s cubic-bezier(.32,.72,0,1);
+  box-shadow:0 -22px 55px -20px rgba(0,0,0,.75);
+}
+.sheet.show{transform:translateY(0)}
+.sheet-grip{width:40px;height:4px;border-radius:2px;background:var(--border-strong);margin:6px auto 14px}
+
+/* transaction rows are tappable; open the detail sheet */
+.tx-tap{cursor:pointer}
+.tx-tap:active{opacity:.6}
+
+/* transaction detail sheet */
+.tx-detail-head{text-align:center;margin:2px 0 18px}
+.tx-detail-ic{width:54px;height:54px;border-radius:16px;background:var(--surface-2);color:var(--muted);display:flex;align-items:center;justify-content:center;margin:0 auto}
+.tx-detail-ic.pos{color:var(--green)}
+.tx-detail-type{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-0.01em;margin-top:12px}
+.tx-detail-head .big-amt{margin:8px 0 2px}
+.big-amt.pos{color:var(--green)}.big-amt.neg{color:var(--red)}
+.tx-wrench{position:absolute;top:14px;right:18px;z-index:2}
+.tx-wrench.active{color:var(--accent);border-color:var(--accent);background:var(--surface-2)}
+/* technical block stays hidden until the wrench is toggled */
+.tx-tech{display:none;margin-top:12px}
+.sheet.show-tech .tx-tech{display:block}
+.tx-tech-label{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--faint);font-weight:600;padding:13px 0 4px;border-bottom:1px solid var(--border)}
+.tx-copy{background:none;border:none;font-family:var(--display);font-size:13.5px;color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:6px;max-width:215px;padding:0}
+.tx-copy-v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tx-copy svg{flex:0 0 auto;width:14px;height:14px;color:var(--faint)}
+.tx-copy:active{opacity:.6}
+
+/* wallets switcher */
+.wallet-prov{display:flex;align-items:center;gap:9px;width:100%;background:none;border:none;padding:0;cursor:pointer;font-family:var(--ui);color:var(--muted)}
+.wallet-prov .avatar{flex:0 0 auto}
+.wallet-prov-name{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.01em;color:var(--text)}
+.wallet-prov .chev{margin-left:auto;width:16px;height:16px}
+.wallet-prov:hover .wallet-prov-name{color:var(--accent)}
+.wallet-ic{width:42px;height:42px;border-radius:12px;background:var(--surface-2);color:var(--accent);display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.wallet-ic svg{width:21px;height:21px}
+.card.wallet-on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.wallet-badge{width:24px;height:24px;border-radius:50%;background:var(--accent);color:#1a0e00;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.wallet-badge svg{width:15px;height:15px}
+
+/* biometric auth sheet */
+.bio-sheet{text-align:center;padding:6px 4px 8px}
+.bio-ring{width:88px;height:88px;border-radius:50%;margin:8px auto 20px;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 50% 40%,rgba(255,148,16,.16),rgba(255,148,16,.02));border:1px solid var(--border-strong);color:var(--accent);transition:.3s}
+.bio-ring svg{width:42px;height:42px}
+.bio-ring.scanning{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 34px -6px rgba(255,148,16,.6);animation:biopulse 1.1s ease-in-out infinite}
+.bio-ring.ok{border-color:var(--green);color:var(--green);box-shadow:0 0 0 1px var(--green),0 0 30px -8px rgba(70,207,124,.6);animation:none}
+@keyframes biopulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.04);opacity:.82}}
+.bio-title{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-0.01em}
+.bio-sub{color:var(--muted);font-size:13.5px;line-height:1.5;margin:8px 4px 22px}
+
+/* seed phrase */
+.seed-warn{display:flex;gap:11px;align-items:flex-start;background:rgba(255,106,77,.07);border:1px solid rgba(255,106,77,.32);border-radius:13px;padding:13px 14px;margin:4px 0 20px}
+.seed-warn svg{flex:0 0 auto;color:var(--red);margin-top:1px}
+.seed-warn span{font-size:12.5px;line-height:1.5;color:var(--text)}
+.seed-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;transition:filter .25s}
+.seed-grid.blur{filter:blur(7px)}
+.seed-word{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:12px 13px}
+.seed-num{font-family:var(--display);font-size:11.5px;color:var(--faint);font-weight:600;min-width:17px;text-align:right}
+.seed-w{font-family:var(--display);font-weight:600;font-size:14.5px;letter-spacing:-0.01em}
+.seed-reveal{position:absolute;inset:-4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;cursor:pointer;color:var(--text);font-size:13px;font-weight:600;border-radius:14px;background:rgba(11,13,17,.34)}
+.seed-reveal svg{width:24px;height:24px;color:var(--accent)}
+.seed-reveal:hover{color:var(--accent)}
+
+/* quick-spend limit field */
+.ql-field{display:flex;align-items:baseline;justify-content:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px 20px;transition:border-color .15s}
+.ql-field:focus-within{border-color:var(--accent)}
+.ql-input{background:none;border:none;outline:none;padding:0;color:var(--text);font-family:var(--display);font-weight:700;font-size:40px;letter-spacing:-0.03em;text-align:right;field-sizing:content;min-width:34px;max-width:220px}
+.ql-input::placeholder{color:var(--faint)}
+.ql-unit{font-family:var(--display);font-weight:500;font-size:18px;color:var(--muted)}
+
+/* ===== Sandbox env: floating gear + backdrop (mobile only) ===== */
+.env-fab{
+  position:fixed;right:16px;bottom:88px;z-index:201;
+  width:46px;height:46px;border-radius:50%;
+  border:1px solid var(--border-strong);
+  background:rgba(27,31,38,.55);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  color:var(--text);
+  display:none;align-items:center;justify-content:center;cursor:pointer;
+  box-shadow:0 8px 22px -8px rgba(0,0,0,.7);
+  transition:background .15s,transform .15s,opacity .2s;
+}
+.env-fab svg{width:22px;height:22px;opacity:.82;transition:transform .3s ease}
+.env-fab:active{transform:scale(.92)}
+.env-fab.open{background:rgba(255,148,16,.16);border-color:var(--accent);color:var(--accent)}
+.env-fab.open svg{opacity:1;transform:rotate(60deg)}
+.env-back{
+  position:fixed;inset:0;z-index:199;display:none;
+  background:rgba(4,6,9,.55);opacity:0;pointer-events:none;
+  transition:opacity .25s;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);
+}
+.env-back.open{opacity:1;pointer-events:auto}
+
+/* ===== Mobile: render the prototype as a full-bleed native app ===== */
+@media (max-width:640px){
+  body{padding:0;min-height:100vh;min-height:100dvh;justify-content:flex-start}
+  .stage-head,.hint{display:none}
+  .statusbar{display:none}   /* drop the simulated status bar; the real OS one shows through */
+  .stage{display:block;gap:0;width:100%}
+  .device{
+    width:100%;max-width:none;height:100vh;height:100dvh;
+    border:none;border-radius:0;padding:0;box-shadow:none;
+  }
+  .screen{border-radius:0}
+
+  /* the desktop side panel becomes a slide-up sandbox sheet */
+  .controls{
+    position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;
+    z-index:200;align-self:auto;
+    border-radius:22px 22px 0 0;
+    border:1px solid var(--border-strong);border-bottom:none;
+    max-height:84dvh;overflow-y:auto;scrollbar-width:none;
+    padding:8px 22px 34px;
+    transform:translateY(112%);
+    transition:transform .34s cubic-bezier(.32,.72,0,1);
+  }
+  .controls::-webkit-scrollbar{display:none}
+  .controls.open{transform:translateY(0)}
+  .controls::before{content:"";display:block;width:40px;height:4px;border-radius:2px;background:var(--border-strong);margin:6px auto 16px}
+
+  .env-fab{display:flex}
+  .env-back{display:block}
+}
+</style>
+</head>
+<body>
+
+<div class="stage-head">
+  <div class="stage-title">Eric's Wallet</div>
+  <div class="stage-sub">Fedimint</div>
+</div>
+
+<div class="stage">
+<div class="device">
+  <div class="screen">
+    <div class="statusbar">
+      <span>9:41</span>
+      <span class="icons">
+        <!-- signal -->
+        <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5" width="3" height="7" rx="1"/><rect x="10" y="2" width="3" height="10" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1" opacity=".4"/></svg>
+        <!-- wifi -->
+        <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 11.5a1.3 1.3 0 100-2.6 1.3 1.3 0 000 2.6z"/><path d="M3.2 6.4a7 7 0 019.6 0l-1.3 1.4a5 5 0 00-7 0L3.2 6.4z" opacity=".9"/><path d="M.8 3.9a10.4 10.4 0 0114.4 0l-1.3 1.4a8.5 8.5 0 00-11.8 0L.8 3.9z" opacity=".55"/></svg>
+        <!-- battery -->
+        <svg width="26" height="12" viewBox="0 0 26 12" fill="none"><rect x="1" y="1" width="21" height="10" rx="2.5" stroke="currentColor" opacity=".5"/><rect x="2.5" y="2.5" width="18" height="7" rx="1.4" fill="currentColor"/><rect x="23" y="4" width="2" height="4" rx="1" fill="currentColor" opacity=".5"/></svg>
+      </span>
+    </div>
+
+    <div class="topbar" id="topbar"></div>
+    <div class="body" id="body"></div>
+    <div class="sheet-back" id="sheetBack" onclick="closeSheet()"></div>
+    <div class="sheet" id="sheet"></div>
+    <button class="scan-fab" id="scanFab" onclick="openScan()" title="Scan QR code">
+      <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M4 7V5a1 1 0 011-1h2M4 17v2a1 1 0 001 1h2M20 7V5a1 1 0 00-1-1h-2M20 17v2a1 1 0 01-1 1h-2M4 12h16"/></svg>
+    </button>
+    <button class="jump-top" id="jumpTop" onclick="scrollHome(0)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V6M6 12l6-6 6 6"/></svg>
+      Top
+    </button>
+  </div>
+</div>
+<aside class="controls" id="controls"></aside>
+</div>
+
+<div class="hint">Interactive prototype · tap cards, buttons, tabs & toggles to navigate</div>
+
+<!-- Sandbox env: floating gear opens the simulated-environment panel on mobile -->
+<div class="env-back" id="envBack" onclick="closeEnv()"></div>
+<button class="env-fab" id="envFab" onclick="toggleEnv()" aria-label="Simulated environment settings" title="Simulated environment">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+</button>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   ERIC'S WALLET — Fedimint wallet interactive mockup
+   Single-file SPA. Screen registry + navigation stack.
+   ============================================================ */
+
+/* ---------- mock data ---------- */
+const FEDI_LOGO='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACdCAYAAAAzK3NeAAAtUklEQVR42u2debxcVZXvv2vvU3dIyMAQVCQSCISQIJAgMwHHBpKooATURmUQpFVe6+c1tmLzmlZRH0qL02uUSUQZBJmaSdsgQ5gEIRASAiEEiERESCAhyb23zt7r/bHPqTo13dyqurlVN97fJzd16lTVOXv4nbX2WnvttYUR1MQusy4OB6r4jXkjOTtN0fejzAKmAOOTr74OPINwL8jvNR8vMd0dXkRA4bkFn2l1VdoW0uoCtCN2ffdleBRUkShCe/r2VjgN1TnAjoCt8VMH/BmRW4Cfme7cE5p3iAhYYfn8k1pdtbbDCAHLsMsRlyGxgCrqfBdwKsqZwERg0y2mhaOVCN8FLhJrekQEGylP/3aEhFlErS5Au8EQgfGoZ4xY8w3gc0AOABng86oKgbDnA5NF5GyMrPM1BeffL0YkYAZT5l6Jxg5V7UD5NvAl0jYqtJQgBEEn6UEGmp4onFcF+T7CWSLSK9byzK2faHVV2wYjBEww9eircD0xGIGgdn+E0AmS/itCCv+VQSnhnxbO9SKcAVykDqJuy9IbP97qKrcFRlRwCmuRDgCmoHw5kI+EfAnZBvq4KomULBCyE9UvI3K3RDyjdkQVpxghYAofWCPGnAjsWiBeSrpa478qahgIFjTpcFBB2RU4EefPwisjCBhRwcDUE2+ADQ6UHYDfI+wBBPcJlIz/St+XQcsO0veqqTZ+CuH9wCqMZenVx7S66i3HiAQEIizOKsC7gMmIFId5WclXc+yXhWaIV/gvvKhOTu5xs+kcaXoYISAA6hSJLMAMoEOyxJNaUi9zPku0wkXT13AgQQp2oMwAvVndiBqGEQICIDmLFRXv2VlFEs7VHv9VGw4qIFpGQy0ziRVQdsaIiOoIAxkhIABiDQpWLOOqGh4JIfvzQ0vmVbOEg4wUBEXHoViQuNX1bgeMEBAgMgAqIh4IxMtIwaINMjCbTdCC8CuVfoqAV1Udsf8CRggISGSxo7ud39CzmjL1W9US7tcKLkq78K6gekmIuNp2dzm3YWOrq90WGCEgkOvuxuXzSGSeqSr9Kizham+08rDSFwiqz2icp3NsV6ur3RYYISAQ9/RgunIAjyCyHmF0XZKvHFl/YKn0W4/qIwD59b2trnZbYGQgkmDmWfcCbIPIbYgc0K8lvElHNBUWsAbp9xDKUcCaR791aKur3BYYkYAJ7JhutDderehVguyPIOXjwXIpmB4q5e7ASveLKBquzRrp7Gh1ddsGIwRM4Df0Ih0RglwtIh9D5MAKAhYOy/yCmVetNhNSkH56NYDbMKJ+U4yo4Az2/T/3Y7o7EJEjEPkVwrZVfYDVpuTK/MplhsdrKCeo6h1uYy+Pfv2QVle1bWBaXYB2gunKIZHhza7xv5XInC2RXS+RxeQMEtnwl0teI1P6l8t+VvKb9RLZsztX2zuMNURdI+o3ixEJWIb9v/soYi0SGQt8BpFviDABqDckH5S/qerZoBdp7L3Gnj9+eWarq9hWGCFgFRx4wRNghN6X19K149bvFyNnIxwKEjTGpsOxPMp96vXrvX9+7fcdbx0P3vPgF/duddXaDpuFgJPffRnYsLJMjIA1iDGIDX/qFRMJS2/4WKvrXxMH/WRx0kKC5Oy2InwUkY8j7AMyvuqPVF8HFqJ6tSrXad69lkrDBz4/vdVVqondj7kajUNfqfOFP7xHfSG8m+V3Dv6KvkEj4K6HXoQnWYJjBIzBRAbQHNbmxIiIMX12TFdenS+SURVjhcW/bL/gzIMvfAqJwgMDYDqiMcAeCQl3BbZOvroadDnK48AS3xevgzCNp165/7NTW12VCux5wg04l5AuDoQTa4jX9eTwvkO9qsYuLyJ5HzvwinoNE0VeWX7/aYNSjkEh4M4H/RR1DokiZHQn9OR3wshBYs3+Ys1ksWY8xohYs1Yis0KseVisuV/78svt2FEqOYt6ZfGlc1vaKbVw6KXL0PHdyBsbC+NAVcWt24iqJxo7ujhnrAqjIlgfs+Dk3Vpd9KrY85RbQATNO9y6jSK5aLI6f7A6v5/Gfmd1fizeqzr/ujq/XJ3/I14foDv3gr7Zi+YdEhlWPPDZpsvSFAEn7fcTMDZdSwGwmxj5DMZ8RKzsLNZYbFH1pn9Y48WalWLNLWLNz+yojieCqBdsp7DwB0e0uo9q4uDLVmCjMLNREqkvYPPCXSft3Ooi1sQ+p9+Joy9VU/ie3r009qep83PV+Yk4b7IqWJ2H8OrU6Qq8v169XgwsUxcCh7CG55uQhs0R8IALw4FqJNb8I0bOEmOmSFQgWjXylZ9biTXfFWsuksj0iAnjxYUXvLfV/bVFYZ8v3ol6H/5i36XOn4rzZ6rzE8vIRg0SBlXt/TM4PVe9vxIJMY3PP3R6w+Vq2A84af+UfHSJMWcj8l9izJR+iFbr3ESx5nyx5jwxZixG0vi8EQwmIgNGEGPGijXniTXnJ21f0j+b7DdjpmDkQow5G9UuyAiiBtDQAtXCDb23GPmqGPNvEpnOksJGlRWRss8yFbPJeHG0RPYuEeId3v0Z/nLvpa3uti0CM89aAN6DMV3AtwTOINP31dRgxbnSENocyiGAU6cLRETH7ziX11+6pe6yNSRqdpm1S+pe+agYOVOsRJjqT0/NJ6t8JsEawZp/EisnK4DzzDznkSHuqi0P+53zQFCfqoiVk8WafxJrpEYfbEpbhT8jiJUo6fuPYqRhNVx3MMKkA3/KcwueA2WiiHwNY7YKhZUSX196zKalX/Z9Tow503TI3cBisb7V/TfsodZgOixgp6vTMxGfU0mMeZd8J/luudRLo3xQivJSFcIaGlC2EvVfU9UHJh1w4UpEeP7B+izjuiWgeg3kMvIJrOyVJZtYSf76H0/UkpQJQSdhzSnbHL5PxQT/CBqAwpjDpyHWnCKRmST9tH3V/irRbFJFwMheYuQTYk1D/VU3AU240baIzAuFkCoFFkqJWSkZ+614ZD/0+h+XTBJrOOi7j7W6C4ctDvz+QiQyrP/js5OI7Ic2Rbaq/ZUQDxsmF8rPizEgMg/VbRNXXF2o6xeTD78kZI8yspcYs0da6LRwlFREKqTeQC1jsWaSWHOARAafG0nk0zgKw6IDkjbdpDYq6atsP2aGVJhAyAJhjdkDI3thhF1nXVJXCesaA3pjEKOAzMDIKErmeQUxZdLQSjJgrUPkp1axkX3V6zXtmMhnzhKlWqlum9ZesR3p6k+xZl9EbWFMV/MHpcfhF6Y4DgwXDSRUUJu+l1HizQzgD25cfVKwLgIa56HDorHfpcj+MnWbkLJEXJtqanqThNzZRMaqU9fifiwgJV6mn7qT140As5eEVXC3tgkRxVpMR2Q19juTzFxUI2HBCClZTCWkClJTI0Q19FPmfYGM+F3EGmRtfYZjfVawEfybeTGjcuOyVm8qCYuiu8oYMBHbDEQaRgaMGYdIJJaWE7AK8cYCHwBOBjxwKfB7YJ0CRz2lGG09EcUKoQ3NuOz5qpIwlWiEPDZFq5cSsgUyJgS1JmR7sIog43RDr0hXR10qq34Ceoc1HYopU7GmXAUXSVg61pBNjkMSKenFSEst4dlLFC0twtbAUcApwCGQJLGE9wMLgEuAO0R5XYE5Typq4bY9WkREa0JEjqgvj6WtIKEWz6qawjkpk3SBfKZASrWCqEEVVe+DoKkDdROwY8IY1divDoSromIzKpjEeqq0sqRAzJqzJEbWSGTzhUnvIcTsJYqx4F1BLW0HfJAg8Q4gTVpeRBeBhIcBDxIk4i1qeA2Fo5Ypkh/6MWLSxnlxfo1KbdUbiBbGe0WJB1hFEVCTLLBXJEO+AimNAmZ1tO1Y1Xx9KW/qI6BPCmtkWcEaMhnLyNRQwaaUhCQGilQxUDJq/Fm8+kZM+0Yx+6liJgMfFP9bgWOAE4F92fTUZQeBhAcDjwCXATdJnr9CIDYMHRET35zHyrNIUJ9SXoNgRKAEdVricM4QUjX4f7Ua+axB8MsAfJ1GY10E1FwS4Yw8hpG1Ys3YCklYQrrycWJldHS5uyY57kPkYYChkICzl4RASy2uqNwROBb4NLAX9ftLI+BAYH/gs8DlwG+Al9L7weYnoiZGg8DDiPahdJSo3pRIUDIGLDU2iuO9NMESqdM51XaqaxXzKECU24wq+LnfnsSUD14F6JNizUIxclh2/FeUhGVq2GRVcHXHdYkP0ZhnEB4GkM1EwKNXKH2Z/EDJOG8ScDzwSWAazQfsGmAmIfHlqcAvgF8DL8AQEFElHZM9LCrPYNkT0q0kiqq1ONVWJJtWGe8V3G6qSb+REnIh+MWI8MytJ9bdQHXh1XuexXTm1oo1V2GML0g2U6Z6S9RwidMyWGdVHdeSSstrVfUvYg0LTt1jUPtkzlJl9pIi+RLi7Qb8O/Bb4DvAdAZ3vYwAewLnJfc4G9g1/XD2klCmOU8NrsF1/2lTAmmUv2Dk2nLjsNTxXNlHtTRb1gDFGC/WXGk6c2ufufm6ustYNwEnvGe3MJNt5DqxsiANIC0UuAoJKZstobyCpc7rRWLkchPZQbWA5z4VOlnTQN5Ar2kifDshxTmEDQg3N3YHvp7c85vAHvlMjo/ZS5Q5SweRiEow7IxcjpVFle6xUqOwvK+K5JOy48Iw6z6MXIfA7kfPq7t4DT3lUz/6a0xnDoT3Yc2VYs32hcXaNrNou9pxmOstsXglsqGykVknIqeo6rXdb53A//zD2Kbbf85TWsJjCcPmvYBPEcZ5EwevtxvCi8C1wC+MsMhnJlkGy6k972nlLw89h4jMU6+XqPNjcD7sCpVGOle8d+G15rFDY/8K3n8CZb7vzbP0N8fVXbaGcsNILgIr2FGj5vve3n8TY84XI2NKn44ax1lXTWZuUazpE5FvSWR/g/P0vPJaU40+d4kWVuklvWlRZiqcRLBs39p0zw4O3gH8b+DjXrmeYLA8BjilaCDd2oQv8eWHn0/74DfEfjKY/1DVjqJvL3U+l/n6TPZYk6W2ybEx67D8mx3VOT/e0IM0OGffcK2mffKmIMEEI5E9BWvPNZGZIJGBgoSzm5aE4XitGDkXYy5AtQ+Be0/YpaFyzX6qNFO4QE6DNXoywZc3oeGeHBq8AtxM8CU+DBQda9K4U3vWL1eQOJo78P6L6vVr6vzYRJJVkXwZaVj4Tngl9n9T576msb9EVb3GniVXfLihcjUl3/c85ZYwnkORjtz7JDL/LpE9RCJjiqSrSriCGiYyfxJjvmkie7N67wHu/WT95CtXtYRZioMJsxazKa7hHS5YDdxKIOL9QF/2w0Ys51lXPAeAGGN87D6E92dr7GdWqN/a5PMau/s09v+R74nnWwN4z5OXNL6ctukBxjtPvyNcKDKYXLSdROZYiewnJDJ7i7VjiyHf6TjPIpFZL9YsFmuuEWOuRlgVHM7KvZ+aXNf9qxCvGzicQLx/IMzbDme8QTBYLgHuAXqyH9ZLxFm/CCRU70HZQb3/uDp/nMZ+Os6P9rGjMD4sjvvWauwf19hdqbG/zufjV4mDNffEhUc2VblBcTXs/c+/D+PCsPAF0xmNFWv2lMjOkMjsJpHdRqwRiczrYs1yiexjYs0iRFaLFVxfHtvZyYITB06+1IeWwVbA+wjEey8wejDq1kZ4E5hPIOKdwPr0g3qNlUN//iy+pw/TmUOdot5vg9d3auxmqPOTNfbj1TnV2K/W2C/T2D2mzj/pe+O1aR9rX8zjP3x/05UaVA/ojK/cw+Lv/Jg9z/pf2TldcuNHiQqQV5VcGAdiBdsR4WPHfZ/ZfcD3mJMYF5mCjwOOIBBvFsUQqS0VG4G7gYuB/wHWQjIrRn1EPOTipyFn0d4YnAY1m/eQEwFDvOZNxWtBHT/6rUOZ8ZV7eOw7hw1aZTbbXNB+33wEMz7Cr4szZDR0TxxHz6q1PHjGO+u+5uwlyl098O6QYH4bYA7BuDiYMA87lHgd+F3Shh8Axg/x/XuB+whjxNuANUooze0NGCoH/mgRnV/Yk94fLAqL1xNCMqoLWbeBP35t/81SifaInBwgMpHIhwL/l2DdDnWa4deAWwgd/yBB+BxEeBDmAtsOcXnywEPAl4EHoP0is/vDsMsRncxiziNIvaHEX4GbCBEuj5B1jwTj4H7CTpgnAR8G3jJE5coRHshjgQeGl0gZZgRMxjmjk5mMocIqQiTLzwUWaghKA4L6yIxHY4JE/CPwU0II10eAtw9ROfcGulGG1RZMw4qAAApvIzORvxnxAiFy5QoRntSMt6fazMRRyXoQAicfJcxmXESIrDkO2Gkzl3c3wuzOiiFom0HDsBHYGbfLXIJE2lxGx7PA1cCvEJaWzKoYuHVq/01WPhNjLTjHVOAfgY8D9Tk6B44ewhTjHc1O3Q0lho8E9KSxOzPYPORbCvySQL7lQIFIHd1w484D69DsVNnsJYoLkdVLBc5W+DnwMeAEYLDTpnYB+wB3tGAVQ8MYPgQ0hfLOGMSrKrAIuIKgbl8ECjmR6yFeNdw2TTgyWSGXjBWXA+cm9zuOoJ7fyeBpopkiWEPrVxIOFMOHgAETgMGIUHXAQoJEup5gaBQwmKvY7iiTiAleBL4HXEkwVE4kSK9m00BMU2VbQkDDsMCwGCjMXaz4UNJDgNuBMQ1eKiZEmFxGcKm8kjaCMnT+s9lLipnnE2xPcN2cBOxH44LhDcKs0EMYuG1q+3fvsEhF6ovtuBeNka+PMH11CsGIuQh45aQ9AAnTV0PpvL1tmhSkbD5Q7ZWkTHOTMt5NWfTLADGO1EU1TMaBw0IFC5Bz0GfZt8FL3AicRpAQGEL/zBvozkebCSnpMxJxNWHh0k0EQtYf4w4zq6c+aE8MCwIq0GcZRxiwN4K7ScgHcEubTVWVEDHgDeAuGiPgXghjgHWtrtdA0PYq+OjFhU6ZCDSyB8KbwBNpbdt5nrSsbE8kZa8XuxDWNQ8LtD0B88U+mUaIgKkXL5H49YbDoDxDwuVJ2evFdiSegtmDvMxzc6DtCZjBTBpzUzwFvNrqwjeAV5Oy14uI0FbDYhzY9gRMnuEuGndAPwbkh0NnpEiesnxS9kawD0LHcLCE256ACd5CY4vG+0g7sf21UQEZ3jxGY+6YqSjbt7oeA0FbE3BO0QCZQmPxdX8jzPGSG0YblZsi5ZYmdagXbyNExwx6uo9Br2urC9AffLF0+9DYWo/lJNNsN+06fHTwf+9TKOsq0sCI+jCKEB/Y9jtdtDUBJfhnLemgun48jrJ+OI3/ShuA9cDjDf56prR5/8IwKKCGBeXTGvspjw5b8qU1gD/R2Ah2Tx36hVJ1o20JOLc4K7AzIX9KvXidEGo1LNwR5TBFyj2Z1KVe7JT8tbU/sG0JmGmyPQmT7PXiReB5GB4O6HLcMr1Q5udJ4xTrw3hC27W1B6BtCQgFd8S+NCbDFiOsGY7SLwuBNcDiBn6aZmdta7QtAZMVcFvR+Aq4R1F8u1uB/UJAi4ucGsHeBIu4bdG2BEywA40t4tlIiHimxRFXTUGKHumFSZ3qxW4En2Dboi0JOKdogOxBY/n8/gIsgxZuEjMIuLU4DlyW1KlebE+y+KldDZG2JGCGMjOo3BRmIHiGkMlgS8FfkzrViw6CEx/bpjNBbUnAJKA3R+MBCAuB3uFugBQaIyQiajQwYSZC5HpbXZHqqBkR/c7Tbg0rsVUpyXaay2Y+Dcdb7bwj619YxR+/0mjEfCkSZTGBxtbOxjQ+aG8/FB+ix5K61RvFvgfKdsDLg1Wk/b/zJ8bs8XbWLl6ZyaKaJLTMZ45jF7Zy8LDooqM2Ub0E00+4AYwt7LJjR3cKXreXyEySyO4gObuVRCYvkX1VIvuCRObPkrMbxRrMqE60N8+D/9x46pY5i8MGgYQtr26j/kSTrxASVC5u5+jnepCE6k8nJKasN8plHXAkcH+zGRMO/METSEcOv7E3pG/Lx90a+4kau3do7LbT2Oc0797U2K3S2D8vRl6J1/eqOh+swdiz5MqjS65Z8jRNnXcdridGcopEthuY5Xvzx0rOHgLsKDAK1XQruz5gNSKLgf8GuUnz8YsSWQ76yWJMZLjvs/Uv4dVi++xNY1lOnwNWNtzK7YuVSd3qJeAYgivr/kZdUof8dCk+DmvdNXaAvAP80YjMITi7twE6UBUN2f03KPpn3xvfB1wH3KP5uEfzjqnzrmPptccWrl0YA+5+zDXFfdlU34XqL0CvB05FmUbItRwRpKYhBInuQEjO+EOEO0BOF5HREhkUmHXJsrorK4AJeX4adaIuGr11yBq6JSEew1rSqcX6MXNig9GBB1/yTBiTRwZERgP/hHA78ANCDu4dgC4UQ+i+CBibcOZU0OtRvQLVd0HY+2/3Y64pXN8ATJl7JXiPOm9Q/RTK9agei2YkkKZ7jFG2tXuJy+RHCBeKyNvFGjzKrJ8/W1eFFfCSmUaqH4+sX9PgL9sYUVjj9kiDP99r5Sv1T2fOumw5AmFfF5G3i3Ah8EPS4JCqIlXL+MHohEvXo/opnBr1GjgHmN2OvCJsPLyxTwQ9XZUfozoxe70aFy5+WDwfAScgcjHG7IgIWocneG4xAPUdhI0D64UniWgX2j8YcyAoS8ZuaWzJ+c4kK+XmLBt4m6ghjN2s2VFELiYkVYpKt48fEC9AdaIqPwZ/ulvfJ6iy25FXYDreGrbP0Fx0tCrngo7Ryh9XOUxurJkPtCAjj0Q4TyIzBtJNUjaNTAaE6TS2As4AZwIHpDuLDmcSlpV9/6RujbjOtiWRWpof2A9m/TLZUyQyYxDOA44MvMh0euFQUS3bLiP7psBRHaOec02HPQbAbjMe07tqNT7vdsHrN1AdX0E8rX4z+rkZgITsT6do7KH+cIyZDTY0hKf9eyRP/HCeC86UfUfgfBpbFw1BctbtI0tsgpMFjhtIn1dKvhKhlPJnPKpf93m3S/zqGsyq3z0Cqp9FdTolv9OK62bFbeFp0JpPgwW+YLqiXUGYddXzA613B2FHyWZwKCEN2miouqdI2yNT5tFJXQ5t8pK7M0Af4mFXPg8IpiPaDTgj6Uuqab0KnpTxociTku9MR/Wzbz70HOZt75kxDdV52R9lWaaFg4qLlDO7rIAKIZDgOAa4jbsAKvQB19BYVoAs/hH4oiS+zuFEwkxZBfhiUpdmsI6Q/zAe6A/UKwjzgMmFvk/7NXlf7P9yQRS+nNXWhd8VfzNv9MydphlU56iyk2Z+WH4zLWN99maqGZVc9RrMlZwdN1BTJFkHchXwfZrL8WSBMzVkjwdKghzaFnOe0uz0wLGEcV8zeQM98D2Ea+r5kcnZccDcCgKlXa/VhVLa91pVKFEkr7ITqnOMqn4AVVNwslQjUeqCKblhZYEqiBje7w46eSDDwHSXHw0JJL9H2Ee3GYwj7ID+rrRqR7UxCY9aUvKwvyspeyPR4FlcDfwnYYOpAeXGSdTmZJTdS/o5K3DSL1YIpJQrUE1qhksrqBpV/YBBmV5CtPIxXRmrS4hYfvHkcy39fBzKrgPt9kwDrQW+Skgo2Qx2IQzgd4D2Xh6SKdsOSZkb27O2iAeBs0iGM/VMTWpQveOyPCglVqmQ0vLPK3hSjbxMM6huV/xyMuJTiiIWqhOxQkrWeFIUq6pvqcsc1UJvrCBs5vznJjviMOCbJNHB7TgezJRpFPCNpMzN4EVC270AIa5kwPAKqm9N+q7oYqnSz9TWfAGpe66qqtYJBtVcJWuLg0ytcsOiHteyz7WsgIXCddZDwNumS9bkvxc4G9jQZId8EjhDTGKUtJF/MB2bGkGAM4BPNXnJN4GvEXZvAja9vUQJkj7rr28LxKTsc0r7XgvGSPnngGrOqNJTVZoxEKJRWphqJAxP0wat05woUxdXEOYem2FNBHxFPccUOr4NSDgnzY4amuoY4Cs0lzjUEwy4q9ITdUcFhX7cUI18JdpRk7vV1n7VpWbRVddjgJdL1Go/Pyy9cKW0QxX15YTVvHp9qRGPcKbhHGFzwuub7O/xyXVmpHVupSSc/ZRmXWczCEbH+CYvey3BgHPQWEJOVSXps3xBkiV9S1VBpAMiXoU6h5cNqgtLL1JOxOpqVYvSrfK7Pvs9XY3qskanJDqKkbxvAP9K88GmuxIG+GGxTiuFYPHeb0vKtFuTV3yYYLithSaywYZ+XKaqq1U19HMJ+bISUTfJmX6GagsNYduDfPUL11CrWXHstewGKQkLf4+jukIH6Iwux40zJGsdLicMrBtZoJPFe4D/IEl41AqjJHPP7qQs72nykn9O2mYF0JS5n/TpCrw+XipkStWw+mpDslrquuK7eeB2A9yB6lNafqEM40tuWFEgCmTLqt/keqper/d98UZGdzXcIGW7gN9FMEqa3RXyRODzucTFO5RO6pR8Eu79uaQszWB90ib3pieaWQ0oY7rRvnijer1eVVW1rF8LPKBC6BQFEmXEK3uPLgXuMBLZlcDlZG5Ug7EVIrdC6pVKPtTrn/B6EwryZnN8KVMnlwM/brLTcsBX844PhVYfGhJm76Hh3mfR2Mq/wmUIMXpX1Gir+i+4dkMqWG7C66PZPi0XQKlgSoVP5XCsiroO6QIuN5FdafAehV+g3J2yWjMXriaCC2OCEsZXfG+Dev2u74tftqNyLDilkQSnpcg0bAx8m7CfRjPYBjgP2Dttt9mLNx8Jj3xKs0POvZJ7NxJ2lsX1BMOqYaOjHPedMgXZqgvfF7+sXs9LLWLVUoOkpkYsGKTlwgqSuIC7gcvV+xDyJMa8CnwVdEXNcZ6vptMzRkf6nfCn6v2PUL0eVeI3G8kyWx2ZBl5D2KZ+YZOX3J1gNYYMrJtxqiST8eotBKOj2aifRwmG2RtlbdM0/Bsb0v69Xr3/kXrVWlKwgnS+xvjQK6ArgK8SOFf0N4k1D4J+HtX/wutOtSVfRjIm35HS73m8/hSv52rexRIZHvhcI+n9akM0ZE8V5RngX4Bf0VgK3xTvB84hRJ70bk6jRKBTw73e3+Sl/kIwOhrJoLpJPPD56Rz4gyfQvItRPRevY1E9DVVbTrRS0lX/C0aovgB8XiLzoMZhpVz03IJTmXz4JYFIkbkdOEHR81AOwiuSXFhqXDgQ0odwZq9r8Pp9xP8njvUYg8SDv3PordMla0XOB/4duICwUKpRnETIx7yAzbdg32uI6zupyetsJBgdd6UnNssS1NiBB/V+nXp/pnpdpV6/pF63qUW0CoOkSMwHgC9jzAKcB4Hn7vlMUeFMfu9lCQktGNlBrDldrPmkRHZSugA9+2pKz62XyN4lkf0+wp2mI1KMgBge/urgLFavhgwJc4Rx0JeavKSnjpi5BqBJWZsl+HcJxksMm3f3p/2+/ScSCwPXmxdR3qux/5LG7t0a+9EaO3z54vTS4+fV+SvU+QvxuipIPlh+Z3gGS0o++QOXY3NRCMWOBDFmN7F2tkTmvRKZ3SWy20hkOiSyXiL7pkTmzxLZhySyt4mV+01HtF4iC6o8cs5Bm7Efi8iQcFvC/r9zh+TGrcONwMmEMfCQbT227zkPBLbEHt8Xj1Knh2js5mjs9k8Wp4/W2BmNfZ/GbrXG/mmN3Z3q/G3q/DKcghU073j2fz5duG7V0k+Z86ugdiOLWEEi0yHWbiuR2VYi2y2RiSWyb4g1r9ox3WvVecQa8B7JWR791qwh640PPqm4ojyZSoj8bXRTw3bHQuB40kRFmgRuDBFmnHVvUMtigpAyBv/mxrHq/HYau3Ea+0hjt1Fj/5o6/5rGrk+dR2OPGOGZWysDu/st/dSP/BqddxDymweDurWlajh9xStiIxZe0KwzvzHMWaLkLURhuHkEYcvTYbFRSx34KyE0f74Qhty3tyj13D5fvBP1DkTK1G7m1XmmXXssSz56LUuvP67mtdo5PrMulFmunye4OTpbXa5BQg9hfctP01puKXlv2jI9WyMo65CLgJ+1ukyDiP8CLt3SyAdbkARMkZGE2xFU8VGNX60tcAthrvg12LLIB1uQBKxSoVcJK8qWtLpMTWBRUofXgJAqYwvDFlelW6aF8K1ETiwmdOBw3C/4FcIsz1Kb+PJvH4b7nWwKWxwBIYRvpYpYDLcRFiQN3oT05kcv8HURfgfg7JanelNskQSEYocla1EuBC5udZnqwE+Bi9Ig8i2VfLAFGiHlyBgl2wO/JCTUbGfcTlgV9yps2eSDLVgCFipYjIVIx1RPt7pM/WAJmTFrK5erDBW27McrwewlIedv0qFHAJ+m/R4+D1wK/D49saVLP/g7ISCUzpSUbOSsoFKlIZTSk1r8ceF3lG4Fppq8T35beL8pJNdWKSZj+nsgH/wdERAqSFii4jK8qeAaFMlU7TvlqrKZa8PfD/lGMIIRjGAEIxjBCEYwghGMYAQj+PvCsLL3D7lwKao++CusIMaErI42eU3fh62lwio/sdx9/I6tLnpDOPzXK8OSV5HCGmwtLIPVsC4jeVWvwefo4f7PD+467M2JYUHAg89/DGfSvYsNXW/bWvrWrH+rGJmCNZPEyLZijGBkjRh5ASPLJLIvaexc6gkWhLuPn9hkSYYGh//6xWI2u7BU1mrs3o7X3dTrJLyOV+9Vvb6G8yvU+2Ud24x5uWfV6sLWqOI8D/5Lo/t9Dx3anoD7feth7KgufG8fpisXAQeJNR/HmPeINRPFyCisESlKwI0YWSUi9yFylRi5S73vSQQi93xsp1ZXqV8cdvULBemNMV2ovhuvH1fVQ/C6A1671QeJh/OqXjeo8yvx/g/q/FXAA74nH0tnhN/Qx8Nn7dfqKvWLtibgvuc8iBgQY5DITsaaM8XK8WLNeDGmVA0bE1Rv9pzIekRuQfi2Ov+4mDDdcM8nJrW6alVx2JXPhyk8r4g1e6GchepcVR1dyEDhaqjhsNvp6+r0Gpw/z8fuORKi/mmI1mg3grYl4MyzFoQlnwISmcPFmgvEmH1SgokVSEmXvC8ZA6afiYCR5QJn9v11/Q257UeBKvee0OwOCIOLWb98DhGhd81GOrcZ9RGF8/A6uZBXJZV6BbJlz4X3BYI6v1C9/xKxv0tV0djz6Lea3elr86AtCTjjzD8wbspE1r7wMiLyPqy5WIyZVCRdGQFtRgJmyJcSMBCTV0G+oLG/RiKDxo4FJ+7a6qoCcOjPlyORwccOE9njQX+snu3wHi1JCuUzOVeK0jDZ67mcjM/j/GfU6/ytdn87axc9z8Lvtmbddn9oJhv7ZoPPe95Y9hKI7IGVH6JMwhLCVixJAhwT8p1ZE84bhUQChmMpvFeviJHtEDkf4SWN3QLdDEmTGkUoiyIih6rz56O6nWasXjLEK0jA9DirgsO4MBDU+Ul4/0N1Om/dky8u0Xwzu55tPrSdBNz7c7+FzhyodktkLhVjPoZNJFrG3VKhghPplzFGSlwyBXUs8geBeQqvaey4/7SpLa3vwT9bGrJMhNw216rqewrEK8syVS4Fq6rgCveMv1qdP1mQjb4v5omf/EOru7gE7RaUiY89hAY8QmP/YXUeYhcaM3YQe9RVSweRHnt82fvsH84frs4fj/N0vmVcq6tLx1vGB6nl/HHq/OHl5S3NPFU1+1SSCqNKm4S8LB/G6RHqPJrfnIm/GkP7qWAj+N58p1jzaazpTtwRwflsUhWcVbkZNawakqaUq2KR7KtB5JPAVb1/eX1Nq6vbt2o1iGwNfEpVTdbhXFTBZRJPtdIIyajkoir2qNNuvP+0On87xvQ2XeBBRltJwD0/fXPagFPU+YMLT7HLPtEZyeaqnasmMXy5dNxLYz9TY88B33+8ZfU98D8fT8s7M5SpmtTO1KWkLdL3rvS7JW1VaKODkzZlz0/f2OpuLkFbSUCfdxhrUNWZGDNBjIQZgYKUqyL1spIwtYKlOAbEhHBjDX7BVBKOQjgQmC9R655Bk7N45wEORBlVsHhrSUD11SVi/8YIeJ2g3s9EZJHm22upU1sRECPhyVWdilcpkC5LPptYwFrb6sWkqlgqVXDxeCqopNsktwKuN48IosjUEvKVE9EXz1X6BAdkjAiqUwvGWBuhrQiozrPV9B14c9FL22sya4GV/sd/psqYr1wKlhCQ9HgC0EHIQtCy+moow4Qi6ShJ9l0kYLkrptI5XbCYnS9+VvAP6vaj9t2F9Y9slpzmDaPtCPj6/SvEdtuOEmlXoYL79/sFgoVzmj71GQmoIogQBZ3cwvrGjlAgjbI7C1Un4EAkYKn0y0pFvO9Yd/cSka5cW+ngtiIgzmO6rarz6yqdzWVSz5ogMayEPRsqJGA/r+FvA0Zco5soDgaSrQocXjdk91/RsnFgJQH7l4Dp+ey4EK/rpDOnuPZySLcVAX1PHgmbt70YxnD9GB8F90z5mM/UJF4wREgJuFLzcV46m9klqzmo8/jefN7kopXZba76J2CGaOXzxNnxX7kKVn0R5wvJctoFbUVAyUWoc6A8gZFeVDrT8Z9YRfszPlKiVff9lRsgqLAQSWZXWoWk3D52C7NbmzIQCagDMUYKx72oPgHB8m4ntJUf8Okbj099XQs1divKPPo1Zz4KfrGS2ZAavrTw91eN/QMae7SvdbMDGufTMj6gsf+rxg7NV/owfXk9XJX6V0kSnpkleS6JkGHpDce3uptL0FYEBNKU/qtw/r+rOp9rNnxNspV+Hjp4Pt4/rbHj0XNbF6b06DdnJbsR+ac1dvND2fqrSy0ndY22Sacvnb8FWKVtNv6DNlPBAGIEH6TS5aDHo/qOovHRj98vO84rH/tlghFUZI0YuUhjn5fONqi+EXxvnAcuUq9Hobp1VUs4q4J1gO6YcPwCcDnetXa4Uav6rS5AOfI9cXiC0cXq/AUae9ev6u0n8EDzVaSFcxejeo86h7SBRChIKe/v0dhdUrM++f6GFbW0g3fq/A9UWayxx27WXcgaQ3u5xRPs+r6fh6dXGQ38CJGTSsOv0mm10jCsVOoVQrAyUjA5vlWMnITI3yRnWXThka2uKgDvPP0ONO9AdYJ6vQyvcwpWcdYAKXutGqSQDVRVvQw4AwkbRy6ff2Krq1qBtpOAAM8mDaXKevX6r+r9lRUSsCzowFcZ+5Wcc+536twZ6vzfAGwbpX+0PWE3eXX+b6GM7nfVx7I1/lyp0eFDJMyV6v2/qup6oC3JB2Fyqy2xzaQPpocb8Hpn4qZ4pypdlZsll/35kvcbgctQvigiKyVJ4Lfo4vbZ0/DlhdcwYe/jg4vO6+vq/Hz1Ogan09RpjoKPr/Q1Wf9RCMkP7/UNvF6A5yyE1YggKGuev7nV1ayKtlTBKXY57OJi8sbYWbHmfYh8AZHDMTJWstNsmWiX5HUDRh4SY/4fIjebnO0DEGtYcuUxra5aVezxiRtIZyp8Pu5E+aB6/zm8HoDXUTVVcDBK1qJ6N6o/VqfzJUqTEwvP3XtKq6tWE21NwBS7HHpRUlpBnR8tRg5D5GhEDhEjOyMyKhn79SCyUow8iDE3iZE7JWfXpBEgaiKevvYjra5Ov5h63K8hoY56RfPx1ur1vXj9sHo9ENWJ6rUrcVZvUK8rUL0P1RtVuUdE1qcBPisWnNrq6mwS/x8hE9MdLTQ2WAAAAABJRU5ErkJggg==';
+const FEDS = [
+  {id:'gbf', name:'Test Federation', short:'TF', online:true,  g:[5,7], color:'#F7931A', emoji:'₿', logo:FEDI_LOGO, def:true,
+    desc:"A community-run test federation for Eric's Wallet. Seven independent guardians collectively custody funds — no single operator can move or freeze your ecash. Runs on Bitcoin signet for development and demos.",
+    guardians:[
+      {name:'Atlas',    addr:'atlas.testfed.io:8173',     conn:'direct',  ver:'0.4.2', ms:32, color:'#2C8C76'},
+      {name:'Satoshi',  addr:'sat.guardian.network:8173', conn:'direct',  ver:'0.4.2', ms:28, color:'#3B6EA5'},
+      {name:'Halcyon',  addr:'halcyon-node.eu:8173',      conn:'relayed', ver:'0.4.2', ms:41, color:'#687C4D'},
+      {name:'Nakamoto', addr:'nakamoto.fedi.cash:8173',   conn:'mixed',   ver:'0.4.1', ms:37, color:'#8A6D3B'},
+      {name:'Mercury',  addr:'mercury.testfed.io:8173',   conn:'direct',  ver:'0.4.2', ms:54, color:'#7A4B8C'},
+      {name:'Cipher',   addr:'cipher.relay.net:8173',     conn:'relayed', ver:'0.4.1', ms:73, color:'#B0612E'},
+      {name:'Vesta',    addr:'vesta-guardian.io:8173',    conn:'mixed',   ver:'0.4.2', ms:46, color:'#3F7E8C'},
+    ], quorum:[5,7]},
+  {id:'ltn', name:'Liberty Tree Network', short:'LTN', online:true,  g:[3,3], color:'#3B6EA5', emoji:'🌳'},
+  {id:'ecc', name:'E-Cash Club',          short:'ECC', online:true,  g:[3,4], color:'#2C8C76', emoji:'✦'},
+  {id:'mft', name:'Manyfold Test',        short:'MFT', online:false, g:[0,4], color:'#7A3B3B', emoji:'⬡'},
+  {id:'fuz', name:'Finundzwanzig',        short:'F25', online:true,  g:[2,4], color:'#687C4D', emoji:'25'},
+];
+let DEFAULT_FED = 'gbf';
+
+// Wallets live inside federations (the providers); a single federation can hold
+// several. The Wallets section is the switcher — picking one makes it active and
+// points the home screen at that wallet's provider.
+const WALLETS = [
+  {id:'w-personal', name:'Personal',       fed:'gbf', bal:'12 340',    unit:'SATS', fiat:'≈ €3.45'},
+  {id:'w-savings',  name:'Savings',        fed:'gbf', bal:'1 240 000', unit:'SATS', fiat:'≈ €348.20'},
+  {id:'w-spending', name:'Daily Spending', fed:'ltn', bal:'86 500',    unit:'SATS', fiat:'≈ €24.30'},
+  {id:'w-club',     name:'Club Pool',      fed:'ecc', bal:'415 000',   unit:'SATS', fiat:'≈ €116.50'},
+];
+let ACTIVE_WALLET = 'w-personal';
+function activeWallet(){return WALLETS.find(w=>w.id===ACTIVE_WALLET)||WALLETS[0];}
+
+// twelve-word recovery phrase shown behind the auth gate on the Backup screen
+const SEED_PHRASE = ['ribbon','clutch','velvet','tornado','anchor','glimpse',
+  'marble','squirrel','pioneer','vivid','frost','lemon'];
+
+/* sandbox config — driven by the control dials next to the device */
+const CONFIG = {
+  stable: true,     // stable (USD) balance module available — drives the UI
+  guardians: 5,     // online guardians out of 7 — drives the status ring & detail page
+  lnurl: true,      // LNURL support in the federation — gates the amountless LNURL on Receive
+  history: true,    // whether the wallet has any transaction history — drives the empty state
+};
+
+// Each entry carries the row fields (kind/title/time/amt/unit/pos/asset) plus
+// the data shown in the detail sheet. `type` is the payment rail (lightning /
+// onchain / ecash / swap), `status`+`scls` drive the state pill, and `tech`
+// holds the technical fields revealed by the wrench toggle.
+const ACTIVITY = [
+  {group:'Today', items:[
+    {kind:'recv', title:'Received', time:'2m ago', amt:'+5 000', unit:'SATS', pos:true,
+     type:'lightning', status:'Received', scls:'on', date:'Jun 15, 2026 · 14:32',
+     fiat:'≈ €1.40', memo:'Coffee ☕', fee:'0 sats',
+     gateway:'Henwen LN Gateway',
+     tech:{invoice:'lnbc50u1p3k9w2hpp5q8…e8qpzry29', hash:'8f3a91c4…7d21c0a9', preimage:'b7e1f6…a290af', opId:'a1c93e7f…b4f2e0d1'}},
+    {kind:'sent', title:'Lightning Send', time:'18m ago', amt:'-7.50', unit:'USD', pos:false, asset:'usd',
+     type:'lightning', status:'Sent', scls:'on', date:'Jun 15, 2026 · 14:16',
+     fiat:'≈ 11 900 sats', memo:'Groceries', fee:'3 sats',
+     gateway:'Henwen LN Gateway', lnaddr:'store@getalby.com',
+     tech:{invoice:'lnbc7500n1p3kx0…q9sd4f2y', hash:'2c77ab10…f409e3bb', preimage:'d41e08…77c2b9', opId:'5e2a10cc…91ad7f44'}},
+    {kind:'sent', title:'Lightning Send', time:'1h ago', amt:'-850', unit:'SATS', pos:false,
+     type:'lightning', status:'Sent', scls:'on', date:'Jun 15, 2026 · 13:30',
+     fiat:'≈ €0.24', memo:'Podcast tip', fee:'2 sats',
+     gateway:'Beefy LN Gateway', lnaddr:'host@fountain.fm',
+     tech:{invoice:'lnbc8500n1pj2m6…0fk3hd7v', hash:'9b14d2e8…1a6c44f0', preimage:'7af301…be9d22', opId:'c08be41a…2d77e9b3'}},
+  ]},
+  {group:'Yesterday', items:[
+    {kind:'recv', title:'Received', time:'20:14', amt:'+10.00', unit:'USD', pos:true, asset:'usd',
+     type:'lightning', status:'Received', scls:'on', date:'Jun 14, 2026 · 20:14',
+     fiat:'≈ 15 800 sats', fee:'0 sats', gateway:'Henwen LN Gateway',
+     tech:{invoice:'lnbc100u1pj9k2…7sd0fa3q', hash:'4d8e10ab…99c1f2e7', preimage:'1c9b44…07e8aa', opId:'7740bca1…39e0d8c5'}},
+    {kind:'swap', title:'Swap', time:'16:02', out:{amt:'-1 200',unit:'SATS'}, in:{amt:'+0.76',unit:'USD'},
+     type:'swap', status:'Completed', scls:'on', date:'Jun 14, 2026 · 16:02',
+     rate:'1 BTC = $63 300', fee:'1 sat',
+     tech:{price:'$0.633 / 1 000 sats', round:'Epoch #18,442', opId:'b21c7fe0…4a90c1d3'}},
+    {kind:'recv', title:'Ecash Received', time:'11:30', amt:'+3 400', unit:'SATS', pos:true,
+     type:'ecash', status:'Received', scls:'on', date:'Jun 14, 2026 · 11:30', memo:'Reissued notes',
+     tech:{notes:'AgEEy3J…(4 notes)…fQ9m=', denoms:'2×1 000 · 2×500 · 4×100', opId:'e90af712…5c2b6604'}},
+    {kind:'sent', title:'Ecash Sent', time:'09:48', amt:'-640', unit:'SATS', pos:false,
+     type:'ecash', status:'Spent', scls:'on', date:'Jun 14, 2026 · 09:48',
+     tech:{notes:'AgEEa1Px…(3 notes)…Lk2v=', denoms:'1×500 · 1×100 · 2×20', opId:'33d1bc0e…ee7710a2'}},
+  ]},
+  {group:'May 11', items:[
+    {kind:'recv', title:'On-chain Deposit', time:'18:22', amt:'+10 000', unit:'SATS', pos:true,
+     type:'onchain', status:'Confirmed', scls:'on', date:'May 11, 2026 · 18:22',
+     fiat:'≈ €2.80', conf:'6 confirmations', fee:'420 sats',
+     tech:{address:'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', txid:'9f2c1ab4e7…d0c83a51b9', feeRate:'7 sat/vB', block:'#842,119', opId:'a5f0c91d…7b3e2240'}},
+    {kind:'sent', title:'On-chain Send', time:'13:10', amt:'-500', unit:'SATS', pos:false,
+     type:'onchain', status:'Confirmed', scls:'on', date:'May 11, 2026 · 13:10',
+     fiat:'≈ €0.14', conf:'12 confirmations', fee:'380 sats',
+     tech:{address:'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', txid:'1b7e44c0aa…2f91006e4d', feeRate:'6 sat/vB', vsize:'141 vB', opId:'0c44ab9f…d12e7755'}},
+    {kind:'recv', title:'Received', time:'08:05', amt:'+2 000', unit:'SATS', pos:true,
+     type:'lightning', status:'Received', scls:'on', date:'May 11, 2026 · 08:05', fee:'0 sats',
+     gateway:'Beefy LN Gateway',
+     tech:{invoice:'lnbc20u1pj0m4…3kd9fa0z', hash:'6e2bd1c0…84af1199', preimage:'90c3aa…14ef07', opId:'fb019e2a…6630cc41'}},
+  ]},
+  {group:'May 10', items:[
+    {kind:'sent', title:'Lightning Send', time:'21:33', amt:'-1 250', unit:'SATS', pos:false,
+     type:'lightning', status:'Failed', scls:'off', date:'May 10, 2026 · 21:33',
+     memo:'Hardware wallet', fee:'—',
+     gateway:'Beefy LN Gateway',
+     tech:{invoice:'lnbc125u1pj7x2…ka93md0f', hash:'cc01ab47…7720ee93', opId:'2299aef0…01b7c4d6', error:'No route to destination'}},
+    {kind:'swap', title:'Swap', time:'15:20', out:{amt:'-500',unit:'SATS'}, in:{amt:'+0.32',unit:'USD'},
+     type:'swap', status:'Completed', scls:'on', date:'May 10, 2026 · 15:20',
+     rate:'1 BTC = $64 000', fee:'1 sat',
+     tech:{price:'$0.640 / 1 000 sats', round:'Epoch #18,001', opId:'4810cd2b…aa72f018'}},
+    {kind:'recv', title:'Received', time:'10:11', amt:'+780', unit:'SATS', pos:true,
+     type:'lightning', status:'Received', scls:'on', date:'May 10, 2026 · 10:11', fee:'0 sats',
+     gateway:'Henwen LN Gateway',
+     tech:{invoice:'lnbc7800n1pj4k0…dd02fa7x', hash:'3a90cc18…66b2e7d4', preimage:'aa10f4…2299bc', opId:'7c3300ab…9e41d022'}},
+  ]},
+];
+// give every transaction a stable id and build a flat lookup for the detail sheet
+ACTIVITY.forEach((g,gi)=>g.items.forEach((t,ii)=>{ t.id='tx'+gi+'_'+ii; }));
+const TX_BY_ID={};
+ACTIVITY.forEach(g=>g.items.forEach(t=>{ TX_BY_ID[t.id]=t; }));
+
+const NOTES = [
+  {denom:'5 000', count:2, unit:'SATS'},
+  {denom:'2 000', count:3, unit:'SATS'},
+  {denom:'1 000', count:4, unit:'SATS'},
+  {denom:'500',   count:2, unit:'SATS'},
+  {denom:'200',   count:1, unit:'SATS'},
+];
+
+/* ---------- tiny svg icon set ---------- */
+const I = {
+  scan:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7V5a1 1 0 011-1h2M4 17v2a1 1 0 001 1h2M20 7V5a1 1 0 00-1-1h-2M20 17v2a1 1 0 01-1 1h-2M4 12h16"/></svg>',
+  plus:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  back:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  search:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-3.6-3.6"/></svg>',
+  check:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>',
+  lock:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>',
+  arrowR:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>',
+  filter:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg>',
+  grid:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  addbox:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>',
+  recv:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>',
+  sent:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+  swap:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l-3 3 3 3M4 13h12M17 8l3-3-3-3M20 5H8"/></svg>',
+  eye:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeoff:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 3l18 18M10.6 10.6a3 3 0 004.2 4.2M9.4 5.2A9.6 9.6 0 0112 5c6.5 0 10 7 10 7a18 18 0 01-3.2 4.1M6.3 6.3A18 18 0 002 12s3.5 7 10 7a9.4 9.4 0 004-.9"/></svg>',
+  share:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M8 8l4-4 4 4M5 16v3a1 1 0 001 1h12a1 1 0 001-1v-3"/></svg>',
+  copy:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg>',
+  more:'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  bolt:'<svg width="26" height="26" viewBox="0 0 24 24" fill="#1a0e00"><path d="M13 2L4.5 13.5H11L10 22l8.5-11.5H12L13 2z"/></svg>',
+  note:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.4"/></svg>',
+  chev:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  star:'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.8.8-5 4.7 1.3 6.7L12 17.8 5.9 21l1.4-6.7-5-4.7 6.8-.8L12 2z"/></svg>',
+  compass:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5 5-2z"/></svg>',
+  exchange:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3.5-3.5M7 20l3.5-3.5M17 20V4M17 4l-3.5 3.5M17 4l3.5 3.5"/></svg>',
+  dial:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>',
+  info:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg>',
+  wrench:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5a3.6 3.6 0 00-4.9 4.4L4 15.5 8.5 20l5.6-5.6a3.6 3.6 0 004.4-4.9l-2.5 2.5-2.1-.5-.5-2.1 2.5-2.5z"/></svg>',
+  warn:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.8L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.7 3.8a2 2 0 00-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+  bio:'<svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 9.3A9 9 0 0118.7 6.4"/><path d="M5.6 13.7A8 8 0 015.9 8"/><path d="M8.4 8.3A5 5 0 0117 12c0 1.4-.05 2.5-.2 3.6"/><path d="M8 19a13 13 0 001-5 3 3 0 016 0c0 .9 0 1.6-.1 2.4"/><path d="M12 11.5a.6.6 0 01.6.6c0 2.6-.3 4.6-1.1 6.4"/><path d="M14.6 18.9c.2-.9.3-1.7.4-2.7"/></svg>',
+};
+
+/* tab icons */
+const TAB_IC = {
+  wallet:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18M16.5 14.5h.01"/></svg>',
+  notes:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="12" cy="12" r="2.6"/></svg>',
+  activity:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l-3 3 3 3M4 13h13M17 8l3-3-3-3M20 5H8"/></svg>',
+  services:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  settings:'<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46a.5.5 0 00-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65A.488.488 0 0014 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.5.5 0 00-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z"/></svg>',
+};
+
+/* ---------- helpers ---------- */
+const $ = (s,r=document)=>r.querySelector(s);
+// group the integer part in threes with a thin space; leave any decimals untouched
+function fmtAmount(v){
+  let s=String(v); const neg=s[0]==='-'; if(neg)s=s.slice(1);
+  const dot=s.indexOf('.');
+  let int=(dot<0?s:s.slice(0,dot)).replace(/\D/g,'');
+  const dec=dot<0?'':s.slice(dot);                       // keeps the '.' and fractional digits
+  int=int.replace(/\B(?=(\d{3})+(?!\d))/g,' ');
+  return (neg?'-':'')+int+dec;
+}
+function fed(id){return FEDS.find(f=>f.id===id)}
+function defFed(){return fed(DEFAULT_FED)}
+function avatar(f,size){
+  const s=size||42;
+  if(f.logo){
+    return `<div class="avatar logo-avatar" style="width:${s}px;height:${s}px"><img src="${f.logo}" alt="" style="width:${Math.round(s*0.74)}px;height:${Math.round(s*0.74)}px"></div>`;
+  }
+  return `<div class="avatar" style="width:${s}px;height:${s}px;background:linear-gradient(145deg,${f.color},${shade(f.color,-30)});color:#fff;font-size:${s*0.38}px">${f.emoji}</div>`;
+}
+function shade(hex,p){
+  const n=parseInt(hex.slice(1),16);let r=(n>>16)+p,g=(n>>8&255)+p,b=(n&255)+p;
+  r=Math.max(0,Math.min(255,r));g=Math.max(0,Math.min(255,g));b=Math.max(0,Math.min(255,b));
+  return '#'+(r<<16|g<<8|b).toString(16).padStart(6,'0');
+}
+function statusText(f){
+  return f.online
+    ? `<span class="dot on"></span><span class="s-on">Online</span> · ${f.g[0]}/${f.g[1]} Guardians`
+    : `<span class="dot off"></span><span class="s-off">Offline</span> · ${f.g[0]}/${f.g[1]} Guardians`;
+}
+function txIcon(kind){
+  if(kind==='recv')return I.recv; if(kind==='sent')return I.sent; return I.swap;
+}
+// Render a real, scannable QR code for `data` using the qrcode-generator library.
+// The surrounding .qr-wrap supplies the white quiet-zone padding, so we emit no
+// internal margin and let CSS scale the SVG to fill the card.
+function qr(data){
+  if(typeof qrcode==='function'){
+    try{
+      const q=qrcode(0,'M');          // type 0 = auto-size to fit the data, ECC level M
+      q.addData(String(data));
+      q.make();
+      return q.createSvgTag({cellSize:4,margin:0,scalable:true})
+              .replace(/fill="black"/,'fill="#0B0D11"');   // match the dark brand ink
+    }catch(e){/* fall through to placeholder grid */}
+  }
+  return qrFallback(String(data));
+}
+// last-resort static grid if the QR library failed to load (e.g. offline)
+function qrFallback(seed){
+  const n=21;let s=seed.split('').reduce((a,c)=>a*31+c.charCodeAt(0)&0xffffff,7);
+  function rnd(){s=(s*1103515245+12345)&0x7fffffff;return s/0x7fffffff}
+  const finder=(x,y)=>(x<7&&y<7)||(x>n-8&&y<7)||(x<7&&y>n-8);
+  let rects='';const cell=200/n;
+  for(let y=0;y<n;y++)for(let x=0;x<n;x++){
+    if(finder(x,y))continue;
+    if(rnd()>0.52)rects+=`<rect x="${(x*cell).toFixed(1)}" y="${(y*cell).toFixed(1)}" width="${cell.toFixed(1)}" height="${cell.toFixed(1)}"/>`;
+  }
+  function fpat(ox,oy){
+    return `<rect x="${ox}" y="${oy}" width="${cell*7}" height="${cell*7}" rx="3"/>`
+      +`<rect x="${ox+cell}" y="${oy+cell}" width="${cell*5}" height="${cell*5}" rx="2" fill="#fff"/>`
+      +`<rect x="${ox+cell*2}" y="${oy+cell*2}" width="${cell*3}" height="${cell*3}" rx="1.5"/>`;
+  }
+  return `<svg width="200" height="200" viewBox="0 0 200 200" fill="#0B0D11">${rects}
+     ${fpat(0,0)}${fpat(cell*(n-7),0)}${fpat(0,cell*(n-7))}</svg>`;
+}
+let _toastT;
+function toast(msg){
+  const t=$('#toast');t.innerHTML=msg;t.classList.add('show');
+  clearTimeout(_toastT);_toastT=setTimeout(()=>t.classList.remove('show'),1900);
+}
+
+/* ---------- navigation ---------- */
+const TABS=[
+  {id:'wallet',label:'Wallet'},
+  {id:'notes',label:'Notes'},
+  {id:'activity',label:'Activity'},
+  {id:'services',label:'Services'},
+  {id:'settings',label:'Settings'},
+];
+const TAB_ROOT={wallet:'home',notes:'notes',activity:'activity',services:'services',settings:'settings'};
+let stack=[{id:'home',p:{}}];
+let curTab='wallet';
+
+function go(id,p={}){stack.push({id,p});render()}
+function back(){if(stack.length>1){stack.pop();render()}}
+function selectTab(t){
+  curTab=t;stack=[{id:TAB_ROOT[t],p:{}}];render();
+}
+function render(){
+  const top=stack[stack.length-1];
+  const scr=SCREENS[top.id](top.p);
+  // topbar
+  const tb=$('#topbar');
+  const canBack=stack.length>1;
+  tb.classList.toggle('centered', !!scr.center);
+  tb.innerHTML=scr.center
+    ? `<div class="left">${canBack?`<button class="iconbtn bare" onclick="back()">${I.back}</button>`:''}</div>
+       <h1 class="topbar-title">${scr.title}</h1>
+       <div style="display:flex;gap:10px">${(scr.actions||[]).join('')}</div>`
+    : `<div class="left">
+      ${canBack?`<button class="iconbtn bare" onclick="back()">${I.back}</button>`:''}
+      ${scr.lead||''}
+      ${scr.title?`<h1>${scr.title}</h1>`:''}
+    </div>
+    <div style="display:flex;gap:10px">${(scr.actions||[]).join('')}</div>`;
+  // body
+  const body=$('#body');
+  body.onscroll=null;                          // clear any previous screen's scroll handler
+  closeSheet();                                 // dismiss any open bottom sheet on navigation
+  $('#jumpTop').classList.remove('show');       // jump-to-top is home-only
+  $('#scanFab').classList.remove('show');        // scan FAB is home-only, re-enabled by the scroll handler
+  body.innerHTML=scr.html;body.classList.remove('body-anim');void body.offsetWidth;body.classList.add('body-anim');body.scrollTop=0;
+  if(scr.onMount)scr.onMount();
+}
+
+/* ============================================================
+   SCREENS
+   ============================================================ */
+const SCREENS={};
+
+/* ---- Wallet / Home (single wallet, dual balance, collapsing header) ---- */
+let balanceHidden=false;
+// ring colour reflects how many of 7 guardians are online
+function guardianColor(n){ return n>=7?'var(--green)':(n>=5?'var(--amber)':'var(--red)'); }
+// rounded-rect outline matching the button shape, starting at top-centre going clockwise
+const FED_RING_PATH="M20 1.5 H28.5 A10 10 0 0 1 38.5 11.5 V28.5 A10 10 0 0 1 28.5 38.5 H11.5 A10 10 0 0 1 1.5 28.5 V11.5 A10 10 0 0 1 11.5 1.5 H20 Z";
+function fedRing(n){
+  const pct=Math.max(0,Math.min(100,n/7*100));
+  return `<svg class="fed-ring" viewBox="0 0 40 40" aria-hidden="true">
+    <path class="fed-ring-track" d="${FED_RING_PATH}"/>
+    <path id="fedRingProg" class="fed-ring-prog" d="${FED_RING_PATH}" pathLength="100" stroke="${guardianColor(n)}" stroke-dasharray="${pct.toFixed(2)} 100"/>
+  </svg>`;
+}
+function fedTopBtn(){
+  const f=defFed();
+  const inner = f.logo
+    ? `<span class="fed-top-av logo-avatar"><img src="${f.logo}" alt="" style="width:18px;height:18px"></span>`
+    : `<span class="fed-top-av" style="background:linear-gradient(145deg,${f.color},${shade(f.color,-30)})">${f.emoji}</span>`;
+  return `<button class="iconbtn fed-top" title="${f.name} · ${CONFIG.guardians}/7 guardians online" onclick="go('fed-details',{id:'${f.id}'})">
+    ${inner}
+    ${fedRing(CONFIG.guardians)}
+  </button>`;
+}
+SCREENS.home=()=>{
+  const hid=balanceHidden;
+  return {
+    title:'',
+    lead:`<button class="iconbtn" title="Settings" onclick="go('settings')">${TAB_IC.settings}</button>`,
+    actions:[
+      `<button class="iconbtn eye-toggle" title="Hide balances" onclick="toggleBal()">${hid?I.eyeoff:I.eye}</button>`,
+      fedTopBtn(),
+    ],
+    html:`
+      <div class="bal-sticky" id="balSticky">
+        <div class="bal-compact" id="balCompact" onclick="scrollHome(0)">
+          <span class="c-asset"><span class="asset-sym btc">₿</span><span class="c-val">${maskNum('12 340','•••••')} <span class="c-unit">SATS</span></span></span>
+          ${CONFIG.stable?`
+          <span class="c-div"></span>
+          <span class="c-asset"><span class="asset-sym usd">$</span><span class="c-val">${maskNum('25.00','••••')} <span class="c-unit">USD</span></span></span>`:''}
+        </div>
+
+        <div class="bal-large" id="balLarge">
+          <div class="asset-stack${CONFIG.stable?'':' solo'}">
+            <div class="asset-card">
+              <div class="asset-amt"><span class="asset-sym btc">₿</span><span>${maskNum('12 340','•••••')} <span class="unit">SATS</span></span></div>
+              <div class="asset-fiat">${maskNum('≈ €3.45','≈ ••••')}</div>
+              <div class="asset-actions">
+                <button class="btn btn-ghost asset-btn" onclick="go('receive',{asset:'btc'})">${I.recv}Receive</button>
+                <button class="btn btn-ghost asset-btn" onclick="go('send',{asset:'btc'})">${I.sent}Send</button>
+              </div>
+            </div>
+            ${CONFIG.stable?`
+            <button class="exchange-btn" title="Exchange Bitcoin ⇄ Dollars" onclick="go('exchange')">${I.exchange}</button>
+
+            <div class="asset-card">
+              <div class="asset-amt"><span class="asset-sym usd">$</span><span>${maskNum('25.00','••••')} <span class="unit">USD</span></span></div>
+              <div class="asset-fiat">${maskNum('≈ €23.10','≈ ••••')}</div>
+              <div class="asset-actions">
+                <button class="btn btn-ghost asset-btn" onclick="go('receive',{asset:'usd'})">${I.recv}Receive</button>
+                <button class="btn btn-ghost asset-btn" onclick="go('send',{asset:'usd'})">${I.sent}Send</button>
+              </div>
+            </div>`:''}
+          </div>
+        </div>
+      </div>
+
+      ${CONFIG.history ? activityGroups().map(grp=>`
+        <div class="act-group-label"><span class="label">${grp.group}</span></div>
+        <div>${grp.items.map(txRow).join('')}</div>
+      `).join('') + `<div class="center faint" style="margin:22px 0 4px;font-size:12.5px">End of history</div>`
+      : emptyHistory()}
+    `,
+    onMount: mountHomeScroll,
+  };
+};
+function mountHomeScroll(){
+  const body=$('#body'), large=$('#balLarge'),
+        compact=$('#balCompact'), jump=$('#jumpTop'), scan=$('#scanFab');
+  if(!large)return;
+  const full=large.scrollHeight;
+  const RANGE=Math.max(140, full*0.78);
+  large.style.maxHeight=full+'px';
+  // throttle to one write per frame and guard redundant writes so a scroll event
+  // can't trigger a layout change that feeds back into another scroll event (flicker)
+  let ticking=false, lastT=-1, lastScrolled=null;
+  function apply(){
+    ticking=false;
+    const st=body.scrollTop;
+    const t=Math.min(1, st/RANGE);
+    if(Math.abs(t-lastT)>0.002){
+      lastT=t;
+      large.style.maxHeight=(full*(1-t)).toFixed(1)+'px';
+      // sequenced hand-off at ~35% scroll: large fully gone before compact appears — never both at once
+      large.style.opacity=(Math.max(0, 1-t*2.8)).toFixed(3);
+      compact.style.opacity=(Math.max(0, t*1.555-0.555)).toFixed(3);
+      compact.style.pointerEvents=t>0.5?'auto':'none';
+    }
+    // jump-to-top and the scan FAB share the bottom-centre slot: swap one for the other
+    const scrolled=st>RANGE*0.85;
+    if(scrolled!==lastScrolled){
+      lastScrolled=scrolled;
+      jump.classList.toggle('show', scrolled);
+      scan.classList.toggle('show', !scrolled);
+    }
+  }
+  function upd(){ if(!ticking){ ticking=true; requestAnimationFrame(apply); } }
+  body.onscroll=upd;
+  apply();
+}
+function scrollHome(to){const b=$('#body');if(b)b.scrollTo({top:to,behavior:'smooth'});}
+function goHome(){curTab='wallet';stack=[{id:'home',p:{}}];render();}
+
+/* ---- Scan (QR viewfinder bottom sheet, reached from the overlaid FAB) ---- */
+function openScan(title){
+  const sheet=$('#sheet'), back=$('#sheetBack');
+  sheet.innerHTML=`
+    <div class="sheet-grip"></div>
+    <div style="text-align:center;font-family:var(--display);font-weight:700;font-size:20px;margin:0 0 18px">${title||'Scan QR code'}</div>
+    <div class="scanview" style="margin-top:0">
+      <div class="scan-frame">
+        <span class="cnr tl"></span><span class="cnr tr"></span>
+        <span class="cnr bl"></span><span class="cnr br"></span>
+        <div class="scan-line"></div>
+      </div>
+    </div>
+    <button class="btn btn-ghost btn-wide" style="margin-top:20px;justify-content:center;gap:9px" onclick="toast('Reading clipboard…')">${I.copy} Paste from clipboard</button>`;
+  back.classList.add('show');
+  sheet.classList.add('show');
+}
+// when the stable module is unavailable, drop USD and swap entries
+function activityGroups(){
+  if(!CONFIG.history) return [];
+  if(CONFIG.stable) return ACTIVITY;
+  return ACTIVITY
+    .map(g=>({group:g.group, items:g.items.filter(it=>it.kind!=='swap' && (it.asset||'btc')!=='usd')}))
+    .filter(g=>g.items.length);
+}
+// placeholder shown when there are no transactions yet
+function emptyHistory(){
+  return `<div class="empty-state">
+    <div class="empty-ic">${I.swap}</div>
+    <div class="empty-title">No transaction history yet</div>
+  </div>`;
+}
+function txRow(t){
+  const right = t.kind==='swap'
+    ? `<div class="amt-swap">
+         <div class="amt neg">${maskNum(t.out.amt,'•••')}<span class="u">${t.out.unit}</span></div>
+         <div class="amt pos">${maskNum(t.in.amt,'•••')}<span class="u">${t.in.unit}</span></div>
+       </div>`
+    : `<div class="amt ${t.pos?'pos':'neg'}">${maskNum(t.amt,'•••')}<span class="u">${t.unit}</span></div>`;
+  const badge = t.kind==='swap' ? '' :
+    `<span class="tx-asset ${t.asset||'btc'}">${(t.asset||'btc')==='usd'?'$':'₿'}</span>`;
+  const ring = t.pending ? txRing() : '';     // ring drawn behind the badge so the badge occludes it
+  const t2 = t.pending ? `<span class="pending-tag">Pending</span>` : t.time;
+  return `<div class="tx tx-tap" data-tx="${t.id||''}"${t.id?` onclick="openTxDetail('${t.id}')"`:''}>
+    <div class="ic${t.pending?' pending':''}">${txIcon(t.kind)}${ring}${badge}</div>
+    <div class="info"><div class="t1">${t.title}</div><div class="t2">${t2}</div></div>
+    ${right}
+  </div>`;
+}
+// rotating arc around a tx icon — reuses the federation ring's rounded-rect path
+function txRing(){
+  return `<svg class="tx-ring" viewBox="0 0 40 40" aria-hidden="true">
+    <path class="tx-ring-track" d="${FED_RING_PATH}"/>
+    <path class="tx-ring-prog" d="${FED_RING_PATH}" pathLength="100"/>
+  </svg>`;
+}
+// wrap an amount so it can fade between its real value and a masked placeholder
+function maskNum(shown, dots){
+  return `<span class="maskable" data-shown="${shown}" data-hidden="${dots}">${balanceHidden?dots:shown}</span>`;
+}
+let _maskT;
+function toggleBal(){
+  balanceHidden=!balanceHidden;
+  document.querySelectorAll('.eye-toggle').forEach(b=>{b.innerHTML=balanceHidden?I.eyeoff:I.eye;});
+  const els=document.querySelectorAll('.maskable');
+  els.forEach(el=>el.classList.add('masking'));   // fade all amounts out
+  clearTimeout(_maskT);
+  _maskT=setTimeout(()=>{                          // swap text while invisible, then fade back in
+    els.forEach(el=>{
+      el.textContent = balanceHidden ? el.dataset.hidden : el.dataset.shown;
+      el.classList.remove('masking');
+    });
+  },150);
+}
+
+/* ---- Wallets (switcher — grouped by their federation/provider) ---- */
+SCREENS.wallets=()=>{
+  // group wallets under the federation that holds them; a federation can hold several
+  const order=[];const byFed={};
+  WALLETS.forEach(w=>{ if(!byFed[w.fed]){byFed[w.fed]=[];order.push(w.fed);} byFed[w.fed].push(w); });
+  return {
+    title:'Wallets',
+    actions:[`<button class="iconbtn" title="Add a wallet" onclick="openScan('Scan a federation invite')">${I.plus}</button>`],
+    html:`
+      <p style="color:var(--muted);font-size:13px;line-height:1.55;margin:6px 2px 14px">Switch between your wallets. Each wallet is held by a federation — you can keep several with the same provider.</p>
+      ${order.map(fid=>{
+        const f=fed(fid);
+        return `
+        <div class="section-label" style="margin:18px 0 10px">
+          <button class="wallet-prov" onclick="go('fed-details',{id:'${f.id}'})">
+            ${avatar(f,26)}
+            <span class="wallet-prov-name">${f.name}</span>
+            <span class="s-${f.online?'on':'off'}" style="font-size:11px;font-weight:600;letter-spacing:.02em">${f.online?'Online':'Offline'}</span>
+            <span class="chev">${I.chev}</span>
+          </button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${byFed[fid].map(w=>{
+            const on=w.id===ACTIVE_WALLET;
+            return `<div class="card tap${on?' wallet-on':''}" onclick="switchWallet('${w.id}')">
+              <div class="fed">
+                <div class="wallet-ic">${TAB_IC.wallet}</div>
+                <div class="meta">
+                  <div class="name">${w.name}</div>
+                  <div class="sub">${w.bal} <span class="faint">${w.unit}</span> · ${w.fiat}</div>
+                </div>
+                ${on
+                  ? `<span class="wallet-badge" title="Active">${I.check}</span>`
+                  : `<span class="chev">${I.chev}</span>`}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>`;
+      }).join('')}
+    `,
+  };
+};
+function switchWallet(id){
+  const w=WALLETS.find(x=>x.id===id); if(!w)return;
+  if(ACTIVE_WALLET===id){ toast(`${w.name} is already active`); return; }
+  ACTIVE_WALLET=id;
+  DEFAULT_FED=w.fed;            // keep the home fed-ring / provider in sync with the active wallet
+  toast(`Switched to ${w.name}`);
+  render();
+}
+
+/* ---- Wallet detail (currency) ---- */
+let walletCur='btc';
+SCREENS['wallet-detail']=()=>{
+  const isBtc=walletCur==='btc';
+  return {
+    title:'Wallet',
+    actions:[`<button class="iconbtn" onclick="go('guardians',{id:'${DEFAULT_FED}'})">${I.grid}</button>`],
+    html:`
+      <div class="seg" style="margin-top:4px">
+        <button class="${isBtc?'on':''}" onclick="setCur('btc')">Bitcoin</button>
+        <button class="${!isBtc?'on':''}" onclick="setCur('eur')">EUR</button>
+      </div>
+
+      <div style="margin:26px 0 4px">
+        <div class="balance" style="font-size:42px">${isBtc?'0.025642 <span class="unit">BTC</span>':'3 450.21 <span class="unit">EUR</span>'}</div>
+        <div class="balance-fiat" style="margin-top:14px;line-height:1.9">
+          ≈ 12 340 SATS<br>≈ 3 450.21 EUR
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="go('receive')">${I.recv}Receive</button>
+        <button class="btn btn-ghost" onclick="go('send')">${I.sent}Send</button>
+      </div>
+
+      <div class="section-label"><span class="label">UTXOs / Notes</span></div>
+      <div class="card" style="padding:4px 16px">
+        <div class="drow"><span class="k" style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);font-weight:500">Spendable <span class="faint">(Confirmed)</span></span><span class="v">0.021234 BTC</span></div>
+        <div class="drow"><span class="k" style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);font-weight:500">Pending <span class="faint">(Unconfirmed)</span></span><span class="v">0.004408 BTC</span></div>
+        <div class="drow"><span class="k" style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);font-weight:500">Locked / Reserved</span><span class="v">0.000000 BTC</span></div>
+      </div>
+    `,
+  };
+};
+function setCur(c){walletCur=c;render()}
+
+/* ---- Receive (asset-aware: Bitcoin or US Dollars) ---- */
+let recvMethod='ln';
+let recvAmount='';      // empty until the user enters one
+let recvCur='SATS';     // unit shown beside the amount (tap to change)
+let recvStatus='typing';// 'typing' (placeholder) -> 'loading' (generating) -> 'ready' (QR shown)
+let _recvTimer;         // debounce / latency timer
+let _recvKey='';        // request key of the code currently shown as ready
+let _recvPendingKey=''; // request key currently being generated
+SCREENS.receive=(p)=>{
+  const usd=(p&&p.asset)==='usd';
+  if(usd){
+    // reusable stable-balance account address — pay any amount into the USD balance
+    const acct='spt1qvqzyqqqu4zjae04k9qhsfeh3xt9mrwqzptl32g42du74xwm53q0c7sjl5aqzppkjjcgvqnpqgqrcwnhwden5te0v9cxjtnpd3cxscfwd35kyetjw3uj6arjv4jj6mn9w3mk7unt95erqv34xqurzdpwvch8vctfx9nzummjvuhsqqfqx62tpp4l84l4ue8ze0jym60xcsj8umya983a83rztfuhnr6l35uqlxv7zj';
+    return {
+      title:'Receive Dollars',
+      html:`
+        <div class="asset-pill"><span class="asset-badge usd">$</span><span>US Dollars · Stable</span></div>
+        <div class="label center" style="color:var(--muted);margin:30px 0 12px">Stable account address</div>
+        <div class="qr-wrap">
+          ${qr(acct)}
+          <div class="qr-bolt" style="background:var(--green);color:#06301a;font-family:var(--display);font-weight:700;font-size:26px">$</div>
+        </div>
+        ${codeField(acct,'Address')}
+        <div class="center faint" style="margin-top:18px;font-size:12.5px;letter-spacing:.04em">Reusable address — pay any amount into your USD balance</div>
+      `,
+    };
+  }
+  const seg=`
+      <div class="asset-pill"><span class="asset-badge btc">₿</span><span>Bitcoin</span></div>
+      <div class="seg" style="margin-top:14px">
+        <button class="${recvMethod==='ln'?'on':''}" onclick="setRecv('ln')">Lightning</button>
+        <button class="${recvMethod==='oc'?'on':''}" onclick="setRecv('oc')">On-Chain</button>
+        <button class="${recvMethod==='ec'?'on':''}" onclick="setRecv('ec')">Ecash</button>
+      </div>`;
+  // Ecash arrives as an animated (multi-frame) QR from the sender, so receiving it
+  // means scanning rather than displaying a code — show a viewfinder + capture progress
+  if(recvMethod==='ec') return {
+    title:'Receive Bitcoin',
+    html:seg+ecashScanHtml(),
+    onMount:mountEcashScan,
+  };
+  return {
+    title:'Receive Bitcoin',
+    html:`
+      ${seg}
+
+      <div class="recv-amt-row">
+        <input id="recvAmt" class="recv-amt-input" type="text" inputmode="decimal" placeholder="0"
+               enterkeyhint="done" value="${fmtAmount(recvAmount)}" size="${Math.max(1,fmtAmount(recvAmount).length||1)}"
+               oninput="onRecvAmt(this)" onkeydown="onRecvKey(event)">
+        <button class="recv-unit" onclick="openCurPicker()">${recvCur}<span class="chevd">⌄</span></button>
+      </div>
+      <div class="recv-sub" id="recvSub">${recvSubHtml()}</div>
+
+      <div id="recvQrZone">${recvQrZone()}</div>
+      <div id="recvCodeCard">${recvCodeCard()}</div>
+      <div class="center faint" id="recvNote" style="margin-top:18px;font-size:12.5px;letter-spacing:.04em">${recvNote()}</div>
+    `,
+  };
+};
+// ----- Ecash receive: scan the sender's looping animated QR -----
+const ECASH_FRAMES=8;
+const ECASH_AMOUNT_SATS=2500;   // amount carried by the scanned token (mock)
+const DISPLAY_FIAT='EUR';       // configured display currency
+function fiatFromSats(sats){
+  const u=CURRENCIES.find(c=>c.code===DISPLAY_FIAT);
+  const sym={EUR:'€',USD:'$',GBP:'£'}[DISPLAY_FIAT]||'';
+  return sym+(u?(sats/u.rate):0).toFixed(2);
+}
+function ecashScanHtml(){
+  return `
+    <div id="ecashStage">
+      <div class="scanview" style="margin-top:48px">
+        <div class="scan-frame">
+          <span class="cnr tl"></span><span class="cnr tr"></span>
+          <span class="cnr bl"></span><span class="cnr br"></span>
+          <div class="scan-line"></div>
+        </div>
+      </div>
+      <div class="scan-progress">
+        <div class="scan-progress-track"><div class="scan-progress-fill" id="scanFill"></div></div>
+        <div class="scan-progress-meta" id="scanMeta">
+          <span>Point at the sender's Ecash QR</span><span class="mono">0 / ${ECASH_FRAMES}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+// once every frame is captured, the wallet claims the notes — show the amount,
+// a spinner, and let the user defer it to the background (auto-returns home after 4s)
+function ecashClaimHtml(){
+  return `
+    <div class="claim-stage" id="claimStage">
+      <div class="claim-spin"></div>
+      <div class="claim-amt">${fmtAmount(ECASH_AMOUNT_SATS)} <span class="unit">SATS</span></div>
+      <div class="claim-fiat">≈ ${fiatFromSats(ECASH_AMOUNT_SATS)}</div>
+      <div class="claim-status">Claiming Ecash …</div>
+      <button class="btn btn-ghost btn-wide btn-lg" style="margin-top:30px" onclick="ecashBackground()">Continue in Background</button>
+    </div>
+  `;
+}
+function ecashBackground(){ clearTimeout(_ecashClaimT); goHome(); }
+let _ecashScanT, _ecashClaimT;
+function mountEcashScan(){
+  clearInterval(_ecashScanT); clearTimeout(_ecashClaimT);
+  let got=0;
+  if(!$('#scanFill'))return;
+  _ecashScanT=setInterval(()=>{
+    const fill=$('#scanFill'), meta=$('#scanMeta');
+    if(!fill){clearInterval(_ecashScanT);return;}   // navigated away — stop
+    got++;
+    fill.style.width=Math.round(got/ECASH_FRAMES*100)+'%';
+    if(got>=ECASH_FRAMES){
+      clearInterval(_ecashScanT);
+      const stage=$('#ecashStage');                 // swap the scanner for the claiming state
+      if(stage)stage.innerHTML=ecashClaimHtml();
+      _ecashClaimT=setTimeout(()=>{ if($('#claimStage'))goHome(); },4000);   // auto-continue
+    }else if(meta){
+      meta.innerHTML=`<span>Reading animated QR…</span><span class="mono">${got} / ${ECASH_FRAMES}</span>`;
+    }
+  },480);
+}
+function setRecv(m){
+  recvMethod=m;
+  regenRecv();                              // invalidate the old code, show spinner if generation is needed
+  render();
+  if(recvAmountDerived()) startRecvLatency();   // only invoice/ecash resolve after the simulated latency
+}
+
+// the displayed code depends on method, the LNURL capability, and whether an
+// amount has been entered:
+//  ln + no amount  -> reusable LNURL (sender picks the amount) — only if the
+//                     federation supports LNURL; otherwise fall back to "none"
+//  ln + amount     -> BOLT11 invoice for that amount
+//  oc (on-chain)   -> a reusable Bitcoin address, or a BIP21 URI once an amount is set
+//  ec + no amount  -> nothing to encode yet (placeholder)
+//  ec + amount     -> minted ecash token
+const ONCHAIN_ADDR='bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
+function recvHasAmount(){return recvAmount.trim()!=='' && parseFloat(recvAmount)>0;}
+function recvCode(){
+  const has=recvHasAmount();
+  if(recvMethod==='oc') return {kind:'onchain',
+    val: has?`bitcoin:${ONCHAIN_ADDR}?amount=${(satsForAmount()/1e8).toFixed(8)}`:ONCHAIN_ADDR};
+  if(recvMethod==='ln') return has
+    ? {kind:'invoice', val:'lnbc17410n1p4rqx7vdqqpp5sd55evh9km8542tujqjaewcxvlldxza26qycqhg22lnp85czmtrssp5v54zm8zetprhmmxyalgsal5k8m9ncf95xgyptvssl5t2g5g9uscq9qrsgqcqpjnp4qfmchj4knlhusqzugl93qvl6c5jc2a9fe0tlw8ykwd9ur90spj8wcxqyz5vqrzjqtwnlnd2z7umeqalwyu0h6596r5r8pdx3d0u37vnxevv3msyv38ksqqqqqqqqqqq9sqqqqqqqqqqqqqqrc6hdtrhtgfy5euv53hqmyck90gmuq5ywym7y4jl4hkr3lavlee658tvzlr9nvh6gcpprzp2tqzn0xnnzm7u49sf2y5rz572f75p8rzucqm2x6yl'}
+    : (CONFIG.lnurl ? {kind:'lnurl', val:'lnurl1dp68gurn8ghj7urjdajzuun9vd6hyunfdenkgtnkv95nze3wdaexwtmvdemrztmsv9ukxmmyv4ej7wf58pjrse34xg6rwc3e8ycx2d34xcckywpcvsmkyenzvvck2dnzxccrvc3k893kzwpkv93nycmrvd3rsdf3xesnyv3nxscrwefsvdjq8xmtrv'}
+                    : {kind:'none',  val:null});
+  return has
+    ? {kind:'ecash', val:'AgEEAYqz...c2VuZA=='}
+    : {kind:'none',  val:null};
+}
+// the Lightning invoice is produced asynchronously: placeholder while typing,
+// spinner during the simulated backend latency, QR once ready. (Ecash is received
+// by scanning, and on-chain addresses are instant, so neither is amount-derived.)
+function recvAmountDerived(){return recvCode().kind==='invoice';}
+const QR_GLYPH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M20 14v.01M14 20v.01M20 20v.01M17 17v3"/></svg>';
+function qrPlaceholder(inner){return `<div class="qr-wrap qr-empty"><div class="qr-ph">${inner}</div></div>`;}
+function recvQrZone(){
+  const c=recvCode();
+  if(recvAmountDerived()){
+    if(recvStatus==='loading')
+      return qrPlaceholder(`<div class="qr-spinner"></div><span>Generating invoice…</span>`);
+    if(recvStatus!=='ready')   // still typing — no code yet
+      return qrPlaceholder(QR_GLYPH);
+  }
+  if(c.kind==='none'){
+    // only Lightning with LNURL disabled lands here — it needs an amount for an invoice
+    return qrPlaceholder(`${QR_GLYPH}<span>Enter an amount to generate an invoice</span>`);
+  }
+  // both Lightning forms (LNURL + invoice) carry the bolt badge
+  return `<div class="qr-wrap">${qr(c.val)}${recvMethod==='ln'?`<div class="qr-bolt">${I.bolt}</div>`:''}</div>`;
+}
+// copyable code with inline copy + share actions (replaces the old standalone Share button)
+function codeField(val,shareLabel){
+  return `<div class="code-field">
+    <span class="code-text" title="${val}" onclick="copy('${val}')">${val}</span>
+    <span class="code-acts">
+      <button class="code-act" title="Copy" onclick="copy('${val}')">${I.copy}</button>
+      <button class="code-act" title="Share" onclick="toast('Sharing ${shareLabel}…')">${I.share}</button>
+    </span>
+  </div>`;
+}
+function recvCodeCard(){
+  const c=recvCode();
+  if(c.kind==='none') return '';
+  if(recvAmountDerived() && recvStatus!=='ready') return '';   // nothing to copy until generated
+  return codeField(c.val,recvShareLabel());
+}
+function recvNote(){
+  if(recvAmountDerived()){
+    if(recvStatus==='loading') return 'Generating invoice…';
+    if(recvStatus!=='ready')   return 'Pause typing or press Done to generate';
+  }
+  switch(recvCode().kind){
+    case 'lnurl':   return 'Reusable code — the sender chooses the amount';
+    case 'invoice': return 'Expires in 09:48';
+    case 'ecash':   return 'Redeem within the federation';
+    case 'onchain': return '';
+    // 'none' is only reachable for Lightning when LNURL support is disabled
+    default:        return 'LNURL is unavailable — enter an amount for a one-time invoice';
+  }
+}
+function recvShareLabel(){
+  switch(recvCode().kind){
+    case 'lnurl':   return 'Request';
+    case 'ecash':   return 'Token';
+    case 'onchain': return 'Address';
+    case 'none':    return 'Request';
+    default:        return 'Invoice';
+  }
+}
+// sats equivalent shown under the amount when a non-sats unit is selected;
+// when entering sats the line is reserved (blank) so the QR below never jumps
+function recvSubHtml(){
+  if(recvCur!=='SATS' && recvHasAmount()) return `≈ ${fmtAmount(satsForAmount())} sats`;
+  return '&nbsp;';
+}
+// live-update only the dependent regions so the amount input keeps focus
+function updateRecvRegions(){
+  const sub=$('#recvSub'); if(sub)sub.innerHTML=recvSubHtml();
+  const z=$('#recvQrZone'); if(z)z.innerHTML=recvQrZone();
+  const cc=$('#recvCodeCard'); if(cc)cc.innerHTML=recvCodeCard();
+  const nt=$('#recvNote'); if(nt)nt.textContent=recvNote();
+}
+// a stable key for the current request: regenerate only when one of these changes
+function curRecvKey(){return recvMethod+'|'+recvCur+'|'+recvAmount.trim();}
+// called on every keystroke — show the placeholder and (re)arm the 1s idle timer
+function onRecvAmt(el){
+  recvAmount=el.value.replace(/\s/g,'');       // store the raw number (no separators)
+  const shown=fmtAmount(recvAmount);           // re-render with thin-space grouping
+  el.value=shown;
+  el.size=Math.max(1,shown.length||1);
+  try{const p=shown.length;el.setSelectionRange(p,p);}catch(e){}  // keep caret at the end
+  clearTimeout(_recvTimer); _recvPendingKey='';
+  // on-chain (and amountless LNURL/placeholder) need no generation — update live
+  if(!recvAmountDerived()){ recvStatus='typing'; updateRecvRegions(); return; }
+  if(recvStatus==='ready' && _recvKey===curRecvKey()){ updateRecvRegions(); return; }
+  recvStatus='typing';                       // back to placeholder while typing
+  updateRecvRegions();
+  _recvTimer=setTimeout(commitRecv,1000);     // generate 1s after the last keystroke
+}
+// Enter / mobile "Done"/"Go" key — generate immediately, skipping the idle wait
+function onRecvKey(e){ if(e.key==='Enter'){ e.preventDefault(); e.target.blur(); commitRecv(); } }
+// commit the entered amount: enter the loading state, then resolve after ~1s of latency
+function commitRecv(){
+  if(!recvAmountDerived()) return;            // nothing to generate for on-chain / amountless
+  if(recvStatus==='ready'   && _recvKey===curRecvKey()) return;        // already showing this code
+  if(recvStatus==='loading' && _recvPendingKey===curRecvKey()) return; // already generating it
+  recvStatus='loading';
+  updateRecvRegions();
+  startRecvLatency();
+}
+// simulate the round-trip to the federation / Lightning node before the code is ready
+function startRecvLatency(){
+  clearTimeout(_recvTimer);
+  const key=_recvPendingKey=curRecvKey();
+  _recvTimer=setTimeout(()=>{
+    _recvKey=key; _recvPendingKey=''; recvStatus='ready';
+    updateRecvRegions();
+  },1000);
+}
+// method/currency changed via a control (not the keyboard): re-run generation with latency
+function regenRecv(){
+  clearTimeout(_recvTimer); _recvKey=''; _recvPendingKey='';
+  recvStatus = recvAmountDerived() ? 'loading' : 'typing';   // only invoice/ecash show the spinner
+}
+
+/* ---- currency picker (tap the unit chip on the receive amount) ---- */
+// fiat list, ordered by currency code; bitcoin units are pinned above the separator.
+// `rate` = sats per 1 unit (mock figures, anchored to 1 BTC ≈ $63 400)
+const CURRENCIES=[
+  {code:'AUD', name:'Australian Dollar', flag:'🇦🇺', rate:1041},
+  {code:'BRL', name:'Brazilian Real',    flag:'🇧🇷', rate:315},
+  {code:'CAD', name:'Canadian Dollar',   flag:'🇨🇦', rate:1151},
+  {code:'CHF', name:'Swiss Franc',       flag:'🇨🇭', rate:1767},
+  {code:'CNY', name:'Chinese Yuan',      flag:'🇨🇳', rate:221},
+  {code:'EUR', name:'Euro',              flag:'🇪🇺', rate:1704},
+  {code:'GBP', name:'British Pound',     flag:'🇬🇧', rate:2003},
+  {code:'INR', name:'Indian Rupee',      flag:'🇮🇳', rate:19},
+  {code:'JPY', name:'Japanese Yen',      flag:'🇯🇵', rate:10.5},
+  {code:'KRW', name:'South Korean Won',  flag:'🇰🇷', rate:1.15},
+  {code:'MXN', name:'Mexican Peso',      flag:'🇲🇽', rate:91},
+  {code:'NGN', name:'Nigerian Naira',    flag:'🇳🇬', rate:1.0},
+  {code:'RUB', name:'Russian Ruble',     flag:'🇷🇺', rate:17},
+  {code:'USD', name:'US Dollar',         flag:'🇺🇸', rate:1577},
+  {code:'ZAR', name:'South African Rand',flag:'🇿🇦', rate:87},
+];
+const BTC_UNITS=[
+  {code:'SATS', name:'Satoshis', flag:'₿', btc:true, rate:1},
+  {code:'BTC',  name:'Bitcoin',  flag:'₿', btc:true, rate:1e8},
+];
+// sats equivalent of the entered amount in the currently selected unit
+function curRate(code){const u=BTC_UNITS.concat(CURRENCIES).find(c=>c.code===code);return u?u.rate:1;}
+function satsForAmount(){return Math.round((parseFloat(recvAmount)||0)*curRate(recvCur));}
+let curTarget='recv';   // which screen's unit the picker edits: 'recv' or 'send'
+function openCurPicker(target){
+  curTarget=target||'recv';
+  const sheet=$('#sheet'), back=$('#sheetBack');
+  sheet.innerHTML=`
+    <div class="sheet-grip"></div>
+    <div style="text-align:center;font-family:var(--display);font-weight:700;font-size:18px;margin:0 0 16px">${curTarget==='send'?'Amount currency':'Default currency'}</div>
+    <div class="cur-search-wrap">${I.search}
+      <input id="curSearch" class="cur-search" placeholder="Search currency or code" autocomplete="off" spellcheck="false" oninput="filterCur(this.value)">
+    </div>
+    <div class="cur-list" id="curList">${curListHtml('')}</div>`;
+  back.classList.add('show');
+  sheet.classList.add('show');
+  setTimeout(()=>$('#curSearch')?.focus(),60);
+}
+function curRow(c){
+  const on=c.code===(curTarget==='send'?sendCur:recvCur);
+  return `<button class="cur-row${on?' on':''}" onclick="pickCur('${c.code}')">
+    <span class="cur-flag${c.btc?' btc':''}">${c.flag}</span>
+    <span class="cur-code">${c.code}</span>
+    <span class="cur-name">${c.name}</span>
+    ${on?`<span class="cur-check">${I.check||'✓'}</span>`:''}
+  </button>`;
+}
+function curListHtml(q){
+  q=q.trim().toLowerCase();
+  const m=c=>!q||c.code.toLowerCase().includes(q)||c.name.toLowerCase().includes(q);
+  const top=BTC_UNITS.filter(m), fiat=CURRENCIES.filter(m);
+  if(!top.length && !fiat.length) return `<div class="cur-empty">No currency matches “${q}”</div>`;
+  return top.map(curRow).join('')
+    + (top.length && fiat.length ? `<div class="cur-sep"></div>` : '')
+    + fiat.map(curRow).join('');
+}
+function filterCur(q){const l=$('#curList'); if(l)l.innerHTML=curListHtml(q);}
+function pickCur(code){
+  closeSheet();
+  if(curTarget==='send'){ sendCur=code; applySendCur(); return; }
+  recvCur=code;
+  regenRecv();                              // a new unit means a new amount → new code
+  render();
+  if(recvAmountDerived()) startRecvLatency();
+}
+
+/* ---- Send (asset-aware: Bitcoin or US Dollars) ---- */
+let sendAsset='btc';
+let sendDest='';            // current destination string (BTC send)
+let sendAmtLocked=false;    // true when the amount is fixed by the invoice
+let sendCur='SATS';         // selected input unit for the amount (sats/BTC/fiat)
+// saved recipients shown in the To-field dropdown. The Bitcoin and stable (USD) wallets
+// have distinct address types, so each keeps its own book — Lightning addresses/LNURLs for
+// Bitcoin, stable-account (spt1…) addresses for Dollars. Picking a contact must always yield
+// a destination that's valid for the active asset, otherwise the amount gating re-disables.
+const ADDRESS_BOOK_BTC=[
+  {name:'Satoshi Nakamoto', addr:'satoshi@walletofsatoshi.com'},
+  {name:'Alice Park',       addr:'alice@stacker.news'},
+  {name:'Carol Diaz',       addr:'carol@getalby.com'},
+  {name:'Dave Kim',         addr:'dave@strike.me'},
+  {name:'Corner Coffee',    addr:'pay@corner.coffee'},
+];
+const ADDRESS_BOOK_USD=[
+  {name:'Satoshi Nakamoto', addr:'spt1qvqzyqqqu4zjae04k9qhsfeh3xt9mrwqzptl32g42du74xwm53q0c7sjl5a'},
+  {name:'Alice Park',       addr:'spt1qzfh8x2qpkjjcgvqnpqgqrcwnhwden5te0v9cxjtnpd3cxscfwd35kye0m4'},
+  {name:'Carol Diaz',       addr:'spt1qrjv4jj6mn9w3mk7unt95erqv34xqurzdpwvch8vctfx9nzummjvuhs3x7'},
+  {name:'Dave Kim',         addr:'spt1qx62tpp4l84l4ue8ze0jym60xcsj8umya983a83rztfuhnr6l35uql9q2k'},
+  {name:'Corner Coffee',    addr:'spt1q0c7sjl5aqzppkjjcgvqnpqgqrcwnhwden5te0v9cxjtnpd3cxscfw8m7n'},
+];
+// the book matching the active send asset
+function addressBook(){ return sendAsset==='usd' ? ADDRESS_BOOK_USD : ADDRESS_BOOK_BTC; }
+SCREENS.send=(p)=>{
+  sendAsset=(p&&p.asset)==='usd'?'usd':'btc';
+  const usd=sendAsset==='usd';
+
+  if(usd) return {
+    title:'Send Dollars',
+    actions:[],
+    html:`
+      <div class="asset-pill" style="margin-bottom:4px">
+        <span class="asset-badge usd">$</span><span>US Dollars · Stable</span>
+      </div>
+      <div class="field">
+        <span class="label">To</span>
+        <div style="position:relative">
+          <div class="input mono">
+            <input id="sendTo" placeholder="spt1qvqzyqqq…uqlxv7zj" autocomplete="off" autocapitalize="off" spellcheck="false"
+                   oninput="onSendToUsd(this)" onfocus="onSendToUsd(this)" onkeydown="onSendToKeyUsd(event)" onblur="setTimeout(hideSendDrop,150)" />
+            <span style="color:var(--muted);cursor:pointer" onclick="openScan()">${I.scan}</span>
+          </div>
+          <div class="ab-drop" id="abDrop" style="display:none"></div>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label">Amount</span>
+        <div class="input">
+          <input id="sendAmt" inputmode="decimal" placeholder="0.00" onfocus="hideSendDrop()" oninput="updFiat();updateSendReady()"/>
+          <span class="suffix">USD</span>
+        </div>
+        <div class="balance-fiat" id="sendFiat" style="font-size:13px;margin-top:8px"></div>
+      </div>
+      <div class="field">
+        <span class="label">Note (optional)</span>
+        <div class="input"><input id="sendNote" value="Rent" style="font-size:15px"/></div>
+      </div>
+      <div class="field">
+        <span class="label">Network Fee</span>
+        <div class="input">
+          <span style="font-family:var(--display);font-size:15px;font-weight:600">~0 SATS</span><span class="suffix" style="color:var(--green)">Instant</span>
+        </div>
+      </div>
+      <div class="slide-send disabled" id="slideSend">
+        <div class="slide-track" id="slideTrack">
+          <span class="slide-label" id="slideLabel">Slide to send</span>
+          <div class="slide-knob" id="slideKnob" onpointerdown="slideStart(event)">${I.arrowR}</div>
+        </div>
+      </div>
+    `,
+    onMount: mountSendUsd,
+  };
+
+  // --- Bitcoin: destination-gated send with address-book autocomplete ---
+  sendDest=''; sendAmtLocked=false; sendCur='SATS';
+  return {
+    title:'Send Bitcoin',
+    actions:[],
+    html:`
+      <div class="asset-pill" style="margin-bottom:4px">
+        <span class="asset-badge btc">₿</span><span>Bitcoin</span>
+      </div>
+
+      <div class="field">
+        <span class="label">To</span>
+        <div style="position:relative">
+          <div class="input mono">
+            <input id="sendTo" placeholder="LN address, LNURL, invoice or BOLT12" autocomplete="off" autocapitalize="off" spellcheck="false"
+                   oninput="onSendTo(this)" onfocus="onSendTo(this)" onkeydown="onSendToKey(event)" onblur="setTimeout(hideSendDrop,150)"/>
+            <span style="color:var(--muted);cursor:pointer" title="Scan" onclick="openScan()">${I.scan}</span>
+          </div>
+          <div class="ab-drop" id="abDrop" style="display:none"></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="label">Amount</span>
+        <div class="input is-disabled" id="sendAmtWrap">
+          <input id="sendAmt" inputmode="numeric" disabled placeholder="Enter a destination first" onfocus="hideSendDrop()" oninput="onSendAmt()"/>
+          <span class="lock-ic" id="sendAmtLock" style="display:none">${I.lock}</span>
+          <button class="send-unit" id="sendUnit" onclick="openCurPicker('send')">SATS<span class="chevd">⌄</span></button>
+        </div>
+        <div class="balance-fiat" id="sendSub" style="font-size:13px;margin-top:8px">&nbsp;</div>
+      </div>
+
+      <div class="field">
+        <span class="label">Note (optional)</span>
+        <div class="input"><input id="sendNote" value="Lunch" style="font-size:15px"/></div>
+      </div>
+
+      <div class="field">
+        <span class="label">Max Fee</span>
+        <div class="input">
+          <input value="5" inputmode="numeric" style="font-size:15px"/><span class="suffix">SATS</span>
+        </div>
+      </div>
+
+      <div class="slide-send disabled" id="slideSend">
+        <div class="slide-track" id="slideTrack">
+          <span class="slide-label" id="slideLabel">Slide to send</span>
+          <div class="slide-knob" id="slideKnob" onpointerdown="slideStart(event)">${I.arrowR}</div>
+        </div>
+      </div>
+    `,
+    onMount: mountSend,
+  };
+};
+function mountSend(){ buildSendDrop(''); applySendDest(false); }
+
+/* ----- slide-to-send confirm control ----- */
+function slideStart(e){
+  const send=$('#slideSend'), track=$('#slideTrack'), knob=$('#slideKnob');
+  if(!send||send.classList.contains('disabled')||track.classList.contains('done'))return;
+  e.preventDefault();
+  knob.classList.add('dragging');
+  const max=track.clientWidth-knob.offsetWidth-6;          // 3px of inset each side
+  const grab=e.clientX-knob.getBoundingClientRect().left;  // where inside the knob we grabbed
+  const move=ev=>{
+    const x=Math.max(0,Math.min(max, ev.clientX-track.getBoundingClientRect().left-grab));
+    knob.style.left=x+'px';
+    if(x>=max-1) finish();
+  };
+  const cleanup=()=>{
+    knob.classList.remove('dragging');
+    document.removeEventListener('pointermove',move);
+    document.removeEventListener('pointerup',up);
+    document.removeEventListener('pointercancel',up);
+  };
+  const finish=()=>{
+    cleanup(); track.classList.add('done'); knob.style.left=max+'px';
+    const l=$('#slideLabel'); if(l)l.textContent=send.dataset.done||'Sending…';
+    (window[send.dataset.action]||confirmSend)();   // data-action picks the handler
+  };
+  const up=()=>{ cleanup(); if(!track.classList.contains('done')) knob.style.left='0px'; };  // snap back
+  document.addEventListener('pointermove',move);
+  document.addEventListener('pointerup',up);
+  document.addEventListener('pointercancel',up);
+}
+
+/* ----- destination parsing ----- */
+// detect the destination type and any amount baked into a BOLT11 invoice
+function bolt11Sats(s){
+  const m=s.match(/^lnbc(\d+)([munp]?)1/);
+  if(!m) return null;                                   // 'lnbc1…' = amountless
+  const per={m:1e5,u:1e2,n:1e-1,p:1e-4};                // sats per unit; bare = whole BTC
+  return Math.round(parseInt(m[1],10)*(per[m[2]]??1e8));
+}
+// `reusable` marks destinations worth saving to the address book (addresses, LNURLs,
+// BOLT12 offers) vs single-use invoices (BOLT11, BOLT12 invoice)
+function parseSendDest(str){
+  const s=(str||'').trim(), low=s.toLowerCase();
+  if(s.length<4) return {valid:false};
+  if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return {valid:true,type:'lnaddr',reusable:true, amountSats:null};
+  if(low.startsWith('lnurl'))              return {valid:true,type:'lnurl', reusable:true, amountSats:null};
+  if(low.startsWith('lno'))                return {valid:true,type:'bolt12',reusable:true, amountSats:null};  // offer
+  if(low.startsWith('lni'))                return {valid:true,type:'bolt12',reusable:false,amountSats:null};  // invoice
+  if(low.startsWith('lnbc'))               return {valid:true,type:'bolt11',reusable:false,amountSats:bolt11Sats(low)};
+  return {valid:false};
+}
+
+/* ----- amount gating ----- */
+// reflect the destination onto the amount field: blocked → locked (invoice amount) → editable
+function applySendDest(focusIfNeeded){
+  const amt=$('#sendAmt'), wrap=$('#sendAmtWrap'), lock=$('#sendAmtLock');
+  if(!amt)return;
+  const d=parseSendDest(sendDest);
+  if(!d.valid){
+    sendAmtLocked=false;
+    amt.value=''; amt.readOnly=false; amt.disabled=true; amt.placeholder='Enter a destination first';
+    wrap.classList.add('is-disabled'); lock.style.display='none';
+    applySendCur(); updateSendReady(); return;
+  }
+  wrap.classList.remove('is-disabled'); amt.disabled=false;
+  if(d.amountSats!=null){                 // invoice already carries an amount → show, lock it (in sats)
+    sendAmtLocked=true; sendCur='SATS';
+    amt.value=fmtAmount(d.amountSats); amt.readOnly=true; amt.placeholder='';
+    lock.style.display='';
+  }else{                                   // address / LNURL / BOLT12 → user enters the amount
+    if(sendAmtLocked) amt.value='';
+    sendAmtLocked=false; amt.readOnly=false; amt.placeholder='0'; lock.style.display='none';
+    if(focusIfNeeded) amt.focus();
+  }
+  applySendCur(); updateSendReady();
+}
+// sats equivalent of whatever is entered (or the locked invoice amount)
+function satsForSend(){
+  if(sendAmtLocked) return parseSendDest(sendDest).amountSats||0;
+  const v=parseFloat(($('#sendAmt')?.value||'').replace(/[^0-9.]/g,''))||0;
+  return Math.round(v*curRate(sendCur));
+}
+// keep the unit chip + the always-on sats line in sync with the selected currency
+function applySendCur(){
+  const u=$('#sendUnit'), amt=$('#sendAmt');
+  if(u){
+    u.classList.toggle('locked', sendAmtLocked);
+    u.innerHTML = sendAmtLocked ? 'SATS' : `${sendCur}<span class="chevd">⌄</span>`;
+  }
+  if(amt && !sendAmtLocked) amt.inputMode = sendCur==='SATS' ? 'numeric' : 'decimal';
+  updSendSub();
+}
+// always show the sats equivalent below the amount (reserve the line when empty)
+function updSendSub(){
+  const el=$('#sendSub'); if(!el)return;
+  const s=satsForSend();
+  el.innerHTML = s>0 ? `≈ ${fmtAmount(s)} sats` : '&nbsp;';
+}
+function onSendAmt(){
+  const el=$('#sendAmt');
+  if(el && !sendAmtLocked){               // live thin-space grouping while typing
+    el.value=fmtAmount(el.value.replace(/\s/g,''));
+    try{el.setSelectionRange(el.value.length,el.value.length);}catch(e){}
+  }
+  updSendSub(); updateSendReady();
+}
+function sendReady(){
+  if(sendAsset==='usd'){                    // need a recipient address and a positive amount
+    const to=($('#sendTo')?.value||'').trim();
+    const v=parseFloat(($('#sendAmt')?.value||'').replace(/[^0-9.]/g,''))||0;
+    return to.length>3 && v>0;
+  }
+  if(!parseSendDest(sendDest).valid) return false;
+  return satsForSend()>0;
+}
+// gate the slide-to-send control instead of a button
+function updateSendReady(){ const s=$('#slideSend'); if(s)s.classList.toggle('disabled',!sendReady()); }
+function mountSendUsd(){ updFiat(); updateSendReady(); }
+
+/* ----- To-field address-book dropdown ----- */
+function initials(n){return n.split(/\s+/).map(w=>w[0]||'').join('').slice(0,2).toUpperCase();}
+function buildSendDrop(q){
+  const d=$('#abDrop'); if(!d)return;
+  const query=(q||'').trim(), low=query.toLowerCase();
+  const matches=addressBook().filter(c=>!low||c.name.toLowerCase().includes(low)||c.addr.toLowerCase().includes(low));
+  // offer "add" once the typed value is saveable: any address for USD, a reusable
+  // destination (not a single-use invoice) for Bitcoin
+  const showAdd = query.length>0 && (sendAsset==='usd' ? query.length>3 : parseSendDest(query).reusable===true);
+  let html='';
+  if(showAdd){
+    html+=`<div class="ab-item ab-add" onmousedown="event.preventDefault()" onclick="addToBook()">${I.addbox}<span>Add to address book</span></div>
+           <div class="ab-sep"></div>`;
+  }
+  html += matches.length
+    ? matches.map(c=>`<div class="ab-item" onmousedown="event.preventDefault()" onclick="pickContact('${c.addr}')">
+        <span class="ab-av">${initials(c.name)}</span>
+        <div style="min-width:0;flex:1"><div class="ab-name">${c.name}</div><div class="ab-addr">${c.addr}</div></div>
+      </div>`).join('')
+    : `<div class="ab-empty">No saved contacts match</div>`;
+  d.innerHTML=html;
+}
+function showSendDrop(){ const d=$('#abDrop'); if(d)d.style.display='block'; }
+function hideSendDrop(){ const d=$('#abDrop'); if(d)d.style.display='none'; }
+function onSendTo(el){
+  sendDest=el.value.trim();
+  buildSendDrop(el.value);
+  // once a complete destination is parsed, collapse the dropdown so it stops floating
+  // over (and blocking taps on) the amount field — applies to reusable LNURL/LN-address
+  // /BOLT12 too, not just single-use invoices
+  const d=parseSendDest(sendDest);
+  if(d.valid) hideSendDrop(); else showSendDrop();
+  applySendDest(false);                    // gate the amount, but don't steal focus mid-typing
+}
+function onSendToKey(e){
+  if(e.key==='Enter'){ e.preventDefault(); hideSendDrop(); applySendDest(true); }  // commit → focus amount
+}
+// USD send shares the same dropdown, minus the Lightning destination parsing/gating
+function onSendToUsd(el){
+  buildSendDrop(el.value);
+  // hide the autocomplete once a full stable address is entered, so it stops floating
+  // over (and blocking taps on) the amount field — same fix as the Bitcoin page
+  const v=el.value.trim();
+  if(/^spt1[0-9a-z]{20,}$/i.test(v)) hideSendDrop(); else showSendDrop();
+  updateSendReady();
+}
+function onSendToKeyUsd(e){ if(e.key==='Enter'){ e.preventDefault(); hideSendDrop(); $('#sendAmt')?.focus(); } }
+function pickContact(addr){
+  const el=$('#sendTo'); el.value=addr;
+  hideSendDrop();
+  if(sendAsset==='usd'){ updateSendReady(); $('#sendAmt')?.focus(); return; }
+  sendDest=addr; applySendDest(true);      // selecting a contact auto-focuses the amount
+}
+function addToBook(){
+  const v=($('#sendTo').value||'').trim(); if(!v){toast('Enter an address first');return;}
+  const name = v.includes('@') ? v.split('@')[0]
+    : v.toLowerCase().startsWith('lnurl') ? 'LNURL contact'
+    : v.toLowerCase().startsWith('spt1')  ? 'Stable contact'
+    : 'Saved contact';
+  addressBook().unshift({name,addr:v});
+  hideSendDrop(); toast('Saved to address book');
+  if(sendAsset==='usd'){ updateSendReady(); return; }
+  applySendDest(true);
+}
+
+function updFiat(){
+  const el=$('#sendAmt'); if(!el)return;
+  const v=parseFloat((el.value||'0').replace(/[^0-9.]/g,''))||0;
+  const eur=(sendAsset==='usd' ? v*0.924 : v*0.001175).toFixed(2);
+  const f=$('#sendFiat'); if(f)f.textContent= v>0?('≈ €'+eur):'';
+}
+function confirmSend(){
+  if(!sendReady()){toast('Enter a destination and amount');return;}
+  const memo=($('#sendNote')?.value||'').trim();
+  if(sendAsset==='btc'){
+    const sats=satsForSend();
+    addPendingSend({asset:'btc', sats, dest:sendDest, memo});
+    toast(`Sent <b>${fmtAmount(sats)} SATS</b>`);
+  }else{
+    const usd=($('#sendAmt')?.value||'0').replace(/[^0-9.]/g,'');
+    addPendingSend({asset:'usd', usd, dest:($('#sendTo')?.value||'').trim(), memo});
+    toast(`Sent <b>$${usd}</b>`);
+  }
+  setTimeout(goHome,700);
+}
+// drop a freshly-sent payment into the activity list as pending; it settles after 6s,
+// during which a rotating arc spins around its icon
+let _pendingTxN=0;
+function addPendingSend(o){
+  const id='pending'+(++_pendingTxN), usd=o.asset==='usd';
+  const tx={
+    id, kind:'sent', time:'Pending', pos:false, pending:true, status:'Pending', scls:'warn', date:'Just now', fee:'… sats',
+    title: usd?'Stable Send':'Lightning Send',
+    asset: usd?'usd':'btc',
+    type:  usd?'ecash':'lightning',
+    amt:   usd?('-'+o.usd):('-'+fmtAmount(o.sats)),
+    unit:  usd?'USD':'SATS',
+    fiat:  usd?('≈ '+fmtAmount(Math.round(parseFloat(o.usd||'0')*1577))+' sats')
+             :('≈ €'+(o.sats*0.001175).toFixed(2)),
+  };
+  if(o.memo) tx.memo=o.memo;
+  if(!usd && o.dest && o.dest.includes('@')) tx.lnaddr=o.dest;
+  pushPendingTx(tx, 'Sent');
+}
+// register a pending tx, prepend it to Today, and settle the ring after 6s
+function pushPendingTx(tx, settledStatus){
+  TX_BY_ID[tx.id]=tx;
+  let today=ACTIVITY.find(g=>g.group==='Today');
+  if(!today){ today={group:'Today',items:[]}; ACTIVITY.unshift(today); }
+  today.items.unshift(tx);
+  setTimeout(()=>{                          // settle: clear the pending ring in place (no full re-render)
+    tx.pending=false; tx.time='Just now'; tx.status=settledStatus; tx.scls='on';
+    const row=document.querySelector(`.tx[data-tx="${tx.id}"]`);
+    if(row){
+      row.querySelector('.ic')?.classList.remove('pending');
+      row.querySelector('.tx-ring')?.remove();
+      const t2=row.querySelector('.t2'); if(t2)t2.textContent='Just now';
+    }
+  }, 6000);
+}
+
+/* ---- Exchange (BTC ⇄ USD) ---- */
+let exDir='btc2usd';
+const RATE_USD_PER_SAT=0.000634; // 1 BTC ≈ $63 400
+SCREENS.exchange=()=>{
+  const b2u=exDir==='btc2usd';
+  const from=b2u?{badge:'btc',sym:'₿',label:'Bitcoin',unit:'SATS',bal:'12 340 SATS',val:'5 000'}
+                :{badge:'usd',sym:'$',label:'US Dollars',unit:'USD',bal:'$25.00',val:'10.00'};
+  const to  =b2u?{badge:'usd',sym:'$',label:'US Dollars',unit:'USD'}
+                :{badge:'btc',sym:'₿',label:'Bitcoin',unit:'SATS'};
+  return {
+    title:'Exchange',
+    html:`
+      <div class="ex-card">
+        <div class="asset-head">
+          <span class="asset-badge ${from.badge}">${from.sym}</span>
+          <span class="label">From · ${from.label}</span>
+          <span class="asset-opt" style="border:none;color:var(--faint);letter-spacing:.04em">Bal ${from.bal}</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <input id="exFrom" class="ex-amt-input" inputmode="${b2u?'numeric':'decimal'}" value="${from.val}" oninput="updExchange()"/>
+          <span style="color:var(--muted);font-family:var(--display);font-size:15px;font-weight:500">${from.unit}</span>
+        </div>
+      </div>
+
+      <div class="ex-flip-wrap"><button class="ex-flip" title="Flip direction" onclick="flipExchange()">${I.exchange}</button></div>
+
+      <div class="ex-card">
+        <div class="asset-head">
+          <span class="asset-badge ${to.badge}">${to.sym}</span>
+          <span class="label">To · ${to.label}</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span id="exTo" class="ex-amt-input" style="color:var(--accent)">0</span>
+          <span style="color:var(--muted);font-family:var(--display);font-size:15px;font-weight:500">${to.unit}</span>
+        </div>
+      </div>
+
+      <div class="card" style="padding:4px 16px;margin-top:18px">
+        <div class="drow"><span class="k">Rate</span><span class="v">1 BTC ≈ $63 400</span></div>
+        <div class="drow"><span class="k">${b2u?'Stabilization':'Withdrawal'}</span><span class="v">Up to 10 min</span></div>
+      </div>
+
+      <div class="slide-send" id="slideSend" data-action="confirmExchange" data-done="Exchanging…">
+        <div class="slide-track" id="slideTrack">
+          <span class="slide-label" id="slideLabel">Slide to exchange</span>
+          <div class="slide-knob" id="slideKnob" onpointerdown="slideStart(event)">${I.arrowR}</div>
+        </div>
+      </div>
+    `,
+    onMount: updExchange,
+  };
+};
+function flipExchange(){exDir=(exDir==='btc2usd')?'usd2btc':'btc2usd';render();}
+function updExchange(){
+  const el=$('#exFrom'), out=$('#exTo'); if(!el||!out)return;
+  const v=parseFloat((el.value||'0').replace(/[^0-9.]/g,''))||0;
+  out.textContent=(exDir==='btc2usd')
+    ? (v*RATE_USD_PER_SAT).toFixed(2)
+    : fmtAmount(Math.round(v/RATE_USD_PER_SAT));
+}
+function confirmExchange(){
+  const b2u=exDir==='btc2usd';
+  const fromV=($('#exFrom')?.value||'0').trim();
+  const toV=($('#exTo')?.textContent||'0').trim();
+  pushPendingTx({
+    id:'pending'+(++_pendingTxN), kind:'swap', title:'Swap', time:'Pending', pending:true,
+    type:'swap', status:'Pending', scls:'warn', date:'Just now',
+    out: b2u ? {amt:'-'+fromV,unit:'SATS'} : {amt:'-'+fromV,unit:'USD'},
+    in:  b2u ? {amt:'+'+toV,unit:'USD'}    : {amt:'+'+toV,unit:'SATS'},
+    rate:'1 BTC ≈ $63 400', fee:'… sats',
+  }, 'Completed');
+  toast('Exchange submitted');
+  setTimeout(goHome,700);
+}
+
+/* ---- Notes (Ecash vault) ---- */
+let notesFilter='Active';
+SCREENS.notes=()=>{
+  const filters=['All','Active','Pending','Expired'];
+  return {
+    title:'Notes',
+    actions:[`<button class="iconbtn" onclick="toast('Filter & sort notes')">${I.filter}</button>`],
+    html:`
+      <div class="chips" style="margin-top:4px">
+        ${filters.map(f=>`<button class="chip ${f===notesFilter?'on':''}" onclick="setNotesFilter('${f}')">${f}</button>`).join('')}
+      </div>
+
+      <div style="margin:22px 0 8px">
+        <div class="label" style="margin-bottom:8px">Total</div>
+        <div class="balance" style="font-size:38px">12 340 <span class="unit">SATS</span></div>
+        <div class="faint" style="font-size:13px;margin-top:6px">12 notes</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        ${NOTES.map(n=>`
+          <div class="card tap" style="padding:14px 16px" onclick="go('note-detail',{denom:'${n.denom}'})">
+            <div class="fed" style="gap:12px">
+              <div class="note-pill">${I.note}</div>
+              <div class="meta"><div class="name">${n.denom} <span class="faint" style="font-size:12px;font-weight:500">SATS</span></div></div>
+              <span class="faint" style="font-size:13px">${n.count} note${n.count>1?'s':''}</span>
+            </div>
+          </div>`).join('')}
+      </div>
+    `,
+  };
+};
+function setNotesFilter(f){notesFilter=f;render()}
+
+/* ---- Note detail ---- */
+SCREENS['note-detail']=(p)=>({
+  title:'Note',
+  html:`
+    <div style="margin:14px 0 6px">
+      <div class="balance" style="font-size:42px">${p.denom||'2 000'} <span class="unit">SATS</span></div>
+      <div class="faint mono" style="font-size:14px;margin-top:8px">Note #a1f3…9b7e</div>
+    </div>
+    <div style="margin:14px 0 6px"><span class="badge"><span class="dot on"></span><span class="s-on">Active</span></span></div>
+
+    <div class="card" style="padding:4px 16px;margin-top:14px">
+      <div class="drow"><span class="k">Issued</span><span class="v">May 12, 2024 · 10:15</span></div>
+      <div class="drow"><span class="k">Expires</span><span class="v">June 12, 2024 · 10:15</span></div>
+      <div class="drow"><span class="k">From</span><span class="v" style="max-width:60%;text-align:right">${defFed().name}</span></div>
+      <div class="drow"><span class="k">State</span><span class="v">Unspent</span></div>
+    </div>
+
+    <div class="btn-row" style="margin-top:24px">
+      <button class="btn btn-ghost" onclick="toast('Marked as spent')">Mark as Spent</button>
+      <button class="btn btn-primary" onclick="toast('Note reissued')">Reissue</button>
+      <button class="btn btn-ghost" style="flex:0 0 52px" onclick="toast('More actions')">${I.more}</button>
+    </div>
+  `,
+});
+
+/* ---- Federation details ---- */
+// status derives from how many of the 7 guardians are online (drives the slider too)
+function fedStatus(n){
+  if(n>=7) return {label:'Online',   cls:'on'};
+  if(n>=5) return {label:'Degraded', cls:'warn'};
+  return {label:'Offline', cls:'off'};
+}
+// consensus modules offered by the federation; Stable Balance only when the module is enabled
+const MOD_IC={
+  onchain:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12a3 3 0 003 3h1.5M15 12a3 3 0 00-3-3h-1.5"/><path d="M8 8.5L5.5 11a3.5 3.5 0 005 5L13 13.5M16 15.5L18.5 13a3.5 3.5 0 00-5-5L11 10.5"/></svg>',
+  ecash:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/></svg>',
+  lightning:'<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4.5 13.5H11L10 22l8.5-11.5H12L13 2z"/></svg>',
+  stable:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M16.5 7.5A3.5 3.5 0 0013 5h-1.5a3 3 0 000 6h1a3 3 0 010 6H11a3.5 3.5 0 01-3.5-2.5"/></svg>',
+};
+function fedModules(){
+  const m=[
+    {name:'On-Chain',  ic:MOD_IC.onchain},
+    {name:'Ecash',     ic:MOD_IC.ecash},
+    {name:'Lightning', ic:MOD_IC.lightning},
+  ];
+  if(CONFIG.stable) m.push({name:'Stable Balance', ic:MOD_IC.stable});
+  return m;
+}
+SCREENS['fed-details']=(p)=>{
+  const f=fed(p.id)||defFed();
+  const isDef=f.id===DEFAULT_FED;
+  const gs=f.guardians||[];
+  const total=gs.length||f.g[1];
+  // when this is the default federation, the live guardian count is driven by the sandbox dial
+  const online=isDef?Math.min(CONFIG.guardians,total):f.g[0];
+  const st=fedStatus(online);
+  return {
+    title:'Wallet Provider',
+    center:true,
+    actions:[
+      isDef?'':`<button class="iconbtn" title="Set default" onclick="setDefault('${f.id}')" style="color:var(--accent)">${I.star}</button>`,
+      `<button class="iconbtn" title="About" onclick="toast('${(f.desc||f.name).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">${I.info}</button>`,
+    ],
+    html:`
+      <div style="display:flex;justify-content:center;margin:6px 0 24px">
+        ${f.logo
+          ? `<div class="logo-avatar" style="width:122px;height:122px;border-radius:50%;box-shadow:0 0 0 1px var(--border),0 18px 44px -20px rgba(60,150,255,.45)"><img src="${f.logo}" alt="" style="width:74px;height:74px"></div>`
+          : `<div style="width:122px;height:122px;border-radius:50%;background:radial-gradient(circle at 35% 30%,${shade(f.color,30)},${shade(f.color,-50)});display:flex;align-items:center;justify-content:center;font-family:var(--display);font-weight:700;font-size:54px;color:#fff;box-shadow:0 0 0 1px var(--border),0 18px 44px -20px ${f.color}99">${f.emoji}</div>`}
+      </div>
+
+      <div class="card" style="padding:4px 16px">
+        <div class="drow"><span class="k">Name</span><span class="v">${f.name}</span></div>
+        <div class="drow" style="padding:11px 0"><span class="k">Guardians</span><span class="v" style="text-align:right;line-height:1.25"><span class="s-${st.cls}">${online} of ${total} online</span><br><span class="faint" style="font-size:12px;font-weight:500;letter-spacing:.02em">Quorum requires ${(f.quorum||[5,7])[0]} of ${(f.quorum||[5,7])[1]}</span></span></div>
+      </div>
+
+      ${f.desc?`<p style="color:var(--muted);font-size:13.5px;line-height:1.55;margin:18px 2px 4px">${f.desc}</p>`:''}
+
+      <div class="section-label" style="margin:24px 0 12px"><span class="label">Modules</span></div>
+      <div class="mod-list">
+        ${fedModules().map(m=>`<span class="mod-pill">${m.ic}<span>${m.name}</span></span>`).join('')}
+      </div>
+
+      <div class="section-label" style="margin:26px 0 12px"><span class="label">Guardians</span><span class="faint" style="font-size:12px;letter-spacing:.04em">${online} / ${total} online</span></div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        ${gs.map((g,i)=>{
+          const up=i<online;
+          return `<div class="card tap" style="padding:13px 15px" onclick="openGuardian('${f.id}',${i})">
+            <div class="fed">
+              <div class="avatar" style="width:38px;height:38px;background:linear-gradient(145deg,${g.color},${shade(g.color,-40)});color:#fff;font-size:15px">${g.name[0]}</div>
+              <div class="meta">
+                <div class="name">${g.name}</div>
+                <div class="sub">${up?`<span class="s-on">Online</span> · <span style="text-transform:capitalize">${g.conn}</span>`:'<span class="s-off">Offline</span>'}</div>
+              </div>
+              <span class="dot ${up?'on':'off'}" style="width:9px;height:9px"></span>
+              <span class="chev" style="margin-left:4px">${I.chev}</span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      ${isDef?'':`<button class="btn btn-primary btn-wide" style="margin-top:22px" onclick="setDefault('${f.id}')">Set as Default</button>`}
+    `,
+  };
+};
+function setDefault(id){DEFAULT_FED=id;toast('Default federation updated');render()}
+
+/* ---- Guardian connection bottom sheet ---- */
+function openGuardian(fid,i){
+  const f=fed(fid)||defFed();
+  const g=(f.guardians||[])[i]; if(!g)return;
+  const isDef=f.id===DEFAULT_FED;
+  const total=(f.guardians||[]).length;
+  const online=isDef?Math.min(CONFIG.guardians,total):f.g[0];
+  const up=i<online;
+  const sheet=$('#sheet'), back=$('#sheetBack');
+  sheet.innerHTML=`
+    <div class="sheet-grip"></div>
+    <div style="display:flex;align-items:center;gap:13px;margin:2px 0 20px">
+      <div class="avatar" style="width:48px;height:48px;background:linear-gradient(145deg,${g.color},${shade(g.color,-40)});color:#fff;font-size:18px">${g.name[0]}</div>
+      <div>
+        <div style="font-family:var(--display);font-weight:700;font-size:21px;letter-spacing:-0.01em">${g.name}</div>
+        <div style="display:flex;align-items:center;gap:7px;font-size:13px;margin-top:3px"><span class="dot ${up?'on':'off'}"></span><span class="s-${up?'on':'off'}">${up?'Online':'Offline'}</span></div>
+      </div>
+    </div>
+    <div class="card" style="padding:2px 16px">
+      <div class="drow"><span class="k">Address</span><span class="v mono" style="font-size:13px;font-weight:500">${g.addr}</span></div>
+      <div class="drow"><span class="k">Connection</span><span class="v ${up?'':'s-off'}" style="text-transform:capitalize">${up?g.conn:'—'}</span></div>
+      <div class="drow"><span class="k">Version</span><span class="v mono" style="font-size:13.5px">fedimintd ${g.ver}</span></div>
+      <div class="drow"><span class="k">Latency</span><span class="v ${up?'':'s-off'}">${up?g.ms+' ms':'—'}</span></div>
+    </div>`;
+  back.classList.add('show');
+  sheet.classList.add('show');
+}
+function closeSheet(){$('#sheet')?.classList.remove('show');$('#sheetBack')?.classList.remove('show');}
+
+/* ---- Transaction detail bottom sheet ---- */
+// heading like "Lightning received" / "On-chain sent" / "Swap"
+function txTypeLabel(t){
+  const base={lightning:'Lightning',onchain:'On-chain',ecash:'Ecash',swap:'Swap'}[t.type]||'Transaction';
+  if(t.type==='swap') return 'Swap';
+  return base+(t.pos?' received':' sent');
+}
+// one detail row; pass mono+copy to render a truncated, tap-to-copy technical value
+function txRowItem(k,v,opts={}){
+  if(v==null||v==='') return '';
+  if(opts.copy)
+    return `<div class="drow"><span class="k">${k}</span><button class="v mono tx-copy" title="Copy" onclick="copyVal('${v.replace(/'/g,"\\'")}')"><span class="tx-copy-v">${v}</span>${I.copy}</button></div>`;
+  return `<div class="drow"><span class="k">${k}</span><span class="v"${opts.style?` style="${opts.style}"`:''}>${v}</span></div>`;
+}
+function txUserRows(t){
+  let r=txRowItem('Date',t.date);
+  if(t.memo) r+=txRowItem('Note',t.memo);
+  if(t.type==='lightning'){ r+=txRowItem('Gateway',t.gateway); r+=txRowItem('Lightning address',t.lnaddr); }
+  if(t.type==='onchain')  { r+=txRowItem('Confirmations',t.conf); }
+  if(t.type==='swap')     { r+=txRowItem('Rate',t.rate); }
+  if(t.fee!=null) r+=txRowItem('Fee',t.fee);
+  return r;
+}
+function txTechRows(t){
+  const x=t.tech||{}; let r='';
+  if(t.type==='lightning'){ r+=txRowItem('Invoice',x.invoice,{copy:1}); r+=txRowItem('Payment hash',x.hash,{copy:1}); r+=txRowItem('Preimage',x.preimage,{copy:1}); }
+  if(t.type==='onchain'){ r+=txRowItem('Address',x.address,{copy:1}); r+=txRowItem('Transaction ID',x.txid,{copy:1}); r+=txRowItem('Fee rate',x.feeRate); r+=txRowItem('TX size',x.vsize); r+=txRowItem('Block',x.block); }
+  if(t.type==='ecash'){ r+=txRowItem('Ecash notes',x.notes,{copy:1}); r+=txRowItem('Denominations',x.denoms); }
+  if(t.type==='swap'){ r+=txRowItem('Execution price',x.price); r+=txRowItem('Pool epoch',x.round); }
+  r+=txRowItem('Operation ID',x.opId,{copy:1});
+  if(x.error) r+=txRowItem('Error',`<span class="s-off">${x.error}</span>`);
+  return r;
+}
+function openTxDetail(id){
+  const t=TX_BY_ID[id]; if(!t)return;
+  const sheet=$('#sheet'), back=$('#sheetBack');
+  sheet.classList.remove('show-tech');   // always start collapsed
+  const big = t.kind==='swap'
+    ? `<div class="big-amt pos">${maskNum(t.in.amt,'•••')}<span class="unit">${t.in.unit}</span></div>
+       <div class="faint" style="font-size:13px">from ${maskNum(t.out.amt,'•••')} ${t.out.unit}</div>`
+    : `<div class="big-amt ${t.pos?'pos':'neg'}">${maskNum(t.amt,'•••')}<span class="unit">${t.unit}</span></div>
+       ${t.fiat?`<div class="faint" style="font-size:13px">${maskNum(t.fiat,'••••')}</div>`:''}`;
+  const tech=txTechRows(t);
+  sheet.innerHTML=`
+    <div class="sheet-grip"></div>
+    ${tech?`<button class="iconbtn tx-wrench" title="Technical details" onclick="toggleTxTech(this)">${I.wrench}</button>`:''}
+    <div class="tx-detail-head">
+      <div class="tx-detail-ic ${t.pos?'pos':''}">${txIcon(t.kind)}</div>
+      <div class="tx-detail-type">${txTypeLabel(t)}</div>
+      ${big}
+      <span class="badge" style="margin-top:10px"><span class="dot ${t.scls}"></span> ${t.status}</span>
+    </div>
+    <div class="card" style="padding:2px 16px">${txUserRows(t)}</div>
+    ${tech?`<div class="card tx-tech" style="padding:2px 16px">
+      <div class="tx-tech-label">Technical details</div>
+      ${tech}
+    </div>`:''}`;
+  back.classList.add('show');
+  sheet.classList.add('show');
+}
+function toggleTxTech(btn){
+  const on=$('#sheet').classList.toggle('show-tech');
+  btn.classList.toggle('active',on);
+}
+function copyVal(v){
+  try{navigator.clipboard&&navigator.clipboard.writeText(v);}catch(e){}
+  toast('Copied to clipboard');
+}
+
+/* ---- Guardians ---- */
+SCREENS.guardians=(p)=>{
+  const f=fed(p.id)||defFed();
+  const gs=f.guardians||[
+    {name:'Atlas',online:true,ms:32,color:'#2C8C76'},
+    {name:'Satoshi',online:true,ms:28,color:'#3B6EA5'},
+  ];
+  const q=f.quorum||[3,4];
+  return {
+    title:'Guardians',
+    actions:[`<button class="iconbtn" onclick="toast('Consensus view')">${I.grid}</button>`],
+    html:`
+      <div class="faint" style="font-size:13px;margin:2px 0 18px">${f.g[0]} / ${f.g[1]} online</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${gs.map(g=>`
+          <div class="card" style="padding:14px 16px">
+            <div class="fed">
+              <div class="avatar" style="background:linear-gradient(145deg,${g.color},${shade(g.color,-40)});color:#fff;font-size:15px">${g.name[0]}</div>
+              <div class="meta">
+                <div class="name">${g.name}</div>
+                <div class="sub">${g.online?'<span class="s-on">Online</span>':'<span class="s-off">Offline</span>'}</div>
+              </div>
+              <span class="mono ${g.online?'muted':'s-off'}" style="font-size:13.5px">${g.online?g.ms+' ms':'—'}</span>
+            </div>
+          </div>`).join('')}
+      </div>
+      <div class="center faint" style="margin-top:24px;font-size:13px;letter-spacing:.04em">Quorum required: ${q[0]} of ${q[1]}</div>
+    `,
+  };
+};
+
+/* ---- Activity ---- */
+SCREENS.activity=()=>({
+  title:'Activity',
+  actions:[`<button class="iconbtn" onclick="toast('Filter activity')">${I.filter}</button>`],
+  html: CONFIG.history
+    ? activityGroups().map(grp=>`
+        <div class="act-group-label"><span class="label">${grp.group}</span></div>
+        <div>${grp.items.map(txRow).join('')}</div>
+      `).join('') + `<div class="center faint" style="margin-top:24px;font-size:12.5px">End of history</div>`
+    : emptyHistory(),
+});
+
+/* ---- Services ---- */
+SCREENS.services=()=>{
+  const items=[
+    {ic:I.bolt2||'⚡',title:'Lightning Address',sub:'eric@tesseract.cash',badge:'Active',col:'var(--green)'},
+    {ic:'',title:'Nostr Wallet Connect',sub:'2 apps connected',badge:'',col:''},
+    {ic:'',title:'Auto Swap',sub:'BTC → EUR · daily',badge:'On',col:'var(--green)'},
+    {ic:'',title:'Recurring Invoices',sub:'Subscriptions & payroll',badge:'',col:''},
+    {ic:'',title:'BTC Map',sub:'Spend at nearby merchants',badge:'',col:''},
+  ];
+  const ic=[
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4.5 13.5H11L10 22l8.5-11.5H12L13 2z"/></svg>',
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 100 18 9 9 0 000-18z"/><path d="M8 12h8M12 8v8"/></svg>',
+    I.swap,
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5"/></svg>',
+    I.compass,
+  ];
+  return {
+    title:'Services',
+    html:`
+      <div class="section-label" style="margin-top:6px"><span class="label">Connected Services</span></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${items.map((s,i)=>`
+          <div class="card tap" style="padding:15px 16px" onclick="toast('${s.title}')">
+            <div class="fed">
+              <div class="ic tx-ic" style="width:40px;height:40px;border-radius:11px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:0 0 auto">${ic[i]}</div>
+              <div class="meta"><div class="name">${s.title}</div><div class="sub" style="color:var(--muted)">${s.sub}</div></div>
+              ${s.badge?`<span class="badge" style="border-color:${s.col};color:${s.col}"><span class="dot on" style="background:${s.col}"></span>${s.badge}</span>`:`<span class="chev">${I.chev}</span>`}
+            </div>
+          </div>`).join('')}
+      </div>
+    `,
+  };
+};
+
+/* ---- Settings ---- */
+SCREENS.settings=()=>{
+  const groups=[
+    {label:'Wallet',items:[
+      {t:'Wallets',s:`${WALLETS.length} · ${activeWallet().name}`,fn:`go('wallets')`},
+      {t:'Default Currency',s:'SATS · EUR'},
+      {t:'Backup',s:'Seed phrase secured',fn:`openBackup()`},
+    ]},
+    {label:'Security',items:[
+      {t:'Access Control',s:'Biometrics',fn:`go('access')`},
+      {t:'Quick-spend limit',s:QUICK_LIMIT===0?'Off':fmtAmount(QUICK_LIMIT)+' EUR',fn:`go('limit')`},
+    ]},
+    {label:'About',items:[
+      {t:'Network',s:'Bitcoin mainnet'},
+      {t:'Version',s:"Eric's Wallet 1.0.0"},
+    ]},
+  ];
+  return {
+    title:'Settings',
+    html: groups.map(g=>`
+      <div class="section-label" style="margin:18px 0 10px"><span class="label">${g.label}</span></div>
+      <div class="card" style="padding:2px 16px">
+        ${g.items.map(it=>`
+          <div class="drow" style="cursor:pointer" ${it.fn?`onclick="${it.fn}"`:`onclick="toast('${it.t}')"`}>
+            <span class="k" style="text-transform:none;letter-spacing:0;font-size:14.5px;color:var(--text);font-weight:500">${it.t}</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="faint" style="font-size:13px">${it.s}</span><span class="chev">${I.chev}</span></span>
+          </div>`).join('')}
+      </div>
+    `).join(''),
+  };
+};
+
+/* ---- Biometric auth gate (OS biometrics are the only access method) ---- */
+let _authCb=null;
+function requireAuth(reason,onSuccess){
+  _authCb=onSuccess;
+  const sheet=$('#sheet'), back=$('#sheetBack');
+  sheet.innerHTML=`
+    <div class="sheet-grip"></div>
+    <div class="bio-sheet">
+      <div class="bio-ring" id="bioRing">${I.bio}</div>
+      <div class="bio-title" id="bioTitle">Confirm it's you</div>
+      <div class="bio-sub" id="bioSub">${reason||'Authenticate with your device biometrics to continue.'}</div>
+      <button class="btn btn-primary btn-wide" id="bioBtn" onclick="runAuth()">Use biometrics</button>
+      <button class="btn btn-ghost btn-wide" style="margin-top:10px" onclick="closeSheet()">Cancel</button>
+    </div>`;
+  back.classList.add('show');
+  sheet.classList.add('show');
+}
+function runAuth(){
+  const ring=$('#bioRing'), btn=$('#bioBtn'), title=$('#bioTitle'), sub=$('#bioSub');
+  if(!ring)return;
+  ring.classList.add('scanning'); btn.disabled=true;
+  title.textContent='Scanning…'; sub.textContent='Hold still while your device verifies you.';
+  // simulate the OS biometric round-trip, then hand control back to the caller
+  setTimeout(()=>{
+    ring.classList.remove('scanning'); ring.classList.add('ok'); ring.innerHTML=I.check;
+    title.textContent='Verified';
+    setTimeout(()=>{ closeSheet(); const cb=_authCb; _authCb=null; if(cb)cb(); },520);
+  },1050);
+}
+
+/* ---- Backup → auth gate → recovery phrase ---- */
+let _seedShown=false;
+function openBackup(){
+  _seedShown=false;                 // always re-blur the words for each reveal
+  requireAuth('Authenticate to reveal your recovery phrase.', ()=>go('seed'));
+}
+SCREENS.seed=()=>({
+  title:'Recovery Phrase',
+  center:true,
+  html:`
+    <div class="seed-warn">${I.warn}<span>Anyone with these 12 words can spend your funds. Write them down, store them offline, and never share or screenshot them.</span></div>
+    <div style="position:relative">
+      <div class="seed-grid ${_seedShown?'':'blur'}" id="seedGrid">
+        ${SEED_PHRASE.map((w,i)=>`<div class="seed-word"><span class="seed-num">${i+1}</span><span class="seed-w">${w}</span></div>`).join('')}
+      </div>
+      ${_seedShown?'':`<div class="seed-reveal" onclick="revealSeed()">${I.eye}<span>Tap to reveal</span></div>`}
+    </div>
+    <button class="btn btn-ghost btn-wide" style="margin-top:20px"${_seedShown?'':' disabled'} onclick="copy('${SEED_PHRASE.join(' ')}')">${I.copy}Copy to clipboard</button>
+    <button class="btn btn-primary btn-wide" style="margin-top:10px" onclick="back()">I've written it down</button>
+  `,
+});
+function revealSeed(){_seedShown=true;render();}
+
+/* ---- Access Control (device biometrics only — no app PIN) ---- */
+let REQUIRE_UNLOCK=true;
+SCREENS.access=()=>({
+  title:'Access Control',
+  center:true,
+  html:`
+    <p style="color:var(--muted);font-size:13px;line-height:1.55;margin:6px 2px 18px">This wallet unlocks with your device's built-in security. There is no separate app PIN — your operating system's biometrics keep the keys tied to the hardware.</p>
+    <div class="section-label"><span class="label">Method</span></div>
+    <div class="card" style="padding:14px 16px">
+      <div class="fed">
+        <div class="wallet-ic">${I.bio}</div>
+        <div class="meta">
+          <div class="name">Device biometrics</div>
+          <div class="sub">Face ID · Touch ID · fingerprint</div>
+        </div>
+        <span class="s-on" style="font-size:12px;font-weight:600;letter-spacing:.02em">Active</span>
+      </div>
+    </div>
+    <div class="card" style="padding:2px 16px;margin-top:12px">
+      <div class="drow">
+        <span style="font-size:14.5px;color:var(--text);font-weight:500">Require unlock on open</span>
+        <button class="dial-switch ${REQUIRE_UNLOCK?'on':''}" role="switch" aria-checked="${REQUIRE_UNLOCK}" onclick="toggleUnlock()"><span class="knob"></span></button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px;display:flex;gap:11px;align-items:flex-start;background:var(--surface-2)">
+      ${I.info}<span style="font-size:12.5px;line-height:1.5;color:var(--muted)">App PIN and password unlock are not available — only your operating system's biometric authentication is supported.</span>
+    </div>
+  `,
+});
+function toggleUnlock(){REQUIRE_UNLOCK=!REQUIRE_UNLOCK;render();}
+
+/* ---- Quick-spend limit (amount allowed without authentication) ---- */
+let QUICK_LIMIT=20;     // committed display fiat (EUR); payments up to this skip biometric auth
+let _quickDraft=20;     // in-progress edit, only applied after biometric auth
+function quickSub(v){return v>0?'No authentication needed up to this amount':'Every payment requires authentication';}
+SCREENS.limit=()=>{
+  _quickDraft=QUICK_LIMIT;                 // start each visit from the committed value
+  return {
+    title:'Quick-spend limit',
+    center:true,
+    html:`
+      <p style="color:var(--muted);font-size:13px;line-height:1.55;margin:6px 2px 24px">Payments up to this amount go through instantly. Anything above it asks for your device biometrics first.</p>
+      <div class="ql-field">
+        <input id="qlInput" class="ql-input" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${fmtAmount(QUICK_LIMIT)}" placeholder="0" oninput="editQuickLimit(this)">
+        <span class="ql-unit">EUR</span>
+      </div>
+      <div class="balance-fiat" id="qlSub" style="text-align:center;margin-top:14px">${quickSub(QUICK_LIMIT)}</div>
+      <button class="btn btn-primary btn-wide" id="qlSave" style="margin-top:24px" disabled onclick="saveQuickLimit()">${I.lock}Update limit</button>
+      <div class="card" style="margin-top:18px;display:flex;gap:11px;align-items:flex-start;background:var(--surface-2)">
+        ${I.info}<span style="font-size:12.5px;line-height:1.5;color:var(--muted)">The limit applies per payment. Raising it trades security for convenience — larger sends are always protected by biometrics.</span>
+      </div>
+    `,
+  };
+};
+function editQuickLimit(input){
+  _quickDraft=parseFloat((input.value||'').replace(/[^\d.]/g,''))||0;
+  const sub=$('#qlSub'); if(sub)sub.textContent=quickSub(_quickDraft);
+  const btn=$('#qlSave'); if(btn)btn.disabled=(_quickDraft===QUICK_LIMIT);
+}
+function saveQuickLimit(){
+  if(_quickDraft===QUICK_LIMIT)return;     // nothing to change
+  requireAuth('Authenticate to change your quick-spend limit.', ()=>{
+    QUICK_LIMIT=_quickDraft;
+    toast('Quick-spend limit updated');
+    render();
+  });
+}
+
+/* clipboard */
+function copy(t){
+  if(navigator.clipboard)navigator.clipboard.writeText(t).catch(()=>{});
+  toast('Copied to clipboard');
+}
+
+/* ---- control dials (sandbox the federation's capabilities) ---- */
+function switchHtml(key){
+  return `<button class="dial-switch ${CONFIG[key]?'on':''}" role="switch" aria-checked="${CONFIG[key]}" onclick="toggleConfig('${key}')"><span class="knob"></span></button>`;
+}
+function renderControls(){
+  const el=$('#controls'); if(!el)return;
+  el.innerHTML=`
+    <h3>${I.dial} Federation Sandbox</h3>
+    <div class="ctl-sub">Simulate what this federation supports.</div>
+
+    <div class="ctl">
+      <div class="ctl-top"><span class="ctl-label">Stable balance module</span>${switchHtml('stable')}</div>
+      <div class="ctl-note live">${CONFIG.stable?'USD asset enabled in wallet':'BTC-only wallet'}</div>
+    </div>
+
+    <div class="ctl">
+      <div class="ctl-top"><span class="ctl-label">Online guardians</span><span class="ctl-val" id="gval">${CONFIG.guardians} / 7</span></div>
+      <input type="range" min="0" max="7" value="${CONFIG.guardians}" class="dial-range" style="--fill:${CONFIG.guardians/7*100}%" oninput="setGuardians(this)">
+      <div class="ctl-note live">Drives the federation status ring</div>
+    </div>
+
+    <div class="ctl">
+      <div class="ctl-top"><span class="ctl-label">Transaction history</span>${switchHtml('history')}</div>
+      <div class="ctl-note live">${CONFIG.history?'Showing recent activity':'Empty wallet — placeholder shown'}</div>
+    </div>
+
+    <div class="ctl">
+      <div class="ctl-top"><span class="ctl-label">LNURL support</span>${switchHtml('lnurl')}</div>
+      <div class="ctl-note">Not wired to UI yet</div>
+    </div>`;
+}
+/* mobile sandbox sheet: gear toggles the simulated-env controls panel */
+function openEnv(){
+  $('#controls')?.classList.add('open');
+  $('#envBack')?.classList.add('open');
+  $('#envFab')?.classList.add('open');
+}
+function closeEnv(){
+  $('#controls')?.classList.remove('open');
+  $('#envBack')?.classList.remove('open');
+  $('#envFab')?.classList.remove('open');
+}
+function toggleEnv(){
+  $('#controls')?.classList.contains('open') ? closeEnv() : openEnv();
+}
+function toggleConfig(key){
+  CONFIG[key]=!CONFIG[key];
+  renderControls();
+  if(key==='stable'||key==='history'||key==='lnurl') render();   // these drive the wallet UI
+}
+function setGuardians(input){
+  CONFIG.guardians=parseInt(input.value);
+  input.style.setProperty('--fill', (CONFIG.guardians/7*100)+'%');
+  const g=$('#gval'); if(g)g.textContent=CONFIG.guardians+' / 7';
+  const ring=$('#fedRingProg');   // live-update the federation status ring if it's on screen
+  if(ring){
+    ring.setAttribute('stroke-dasharray', (CONFIG.guardians/7*100).toFixed(2)+' 100');
+    ring.setAttribute('stroke', guardianColor(CONFIG.guardians));
+  }
+  // the federation detail page reflects the live guardian count too (keep scroll position)
+  if(stack[stack.length-1].id==='fed-details'){
+    const sc=$('#body').scrollTop; render(); const b=$('#body'); if(b)b.scrollTop=sc;
+  }
+}
+
+/* boot (supports #screen or #tab/screen deep-links for preview) */
+(function boot(){
+  const h=decodeURIComponent(location.hash.replace(/^#/,''));
+  if(h){
+    const parts=h.split('/');
+    if(TAB_ROOT[parts[0]]){curTab=parts[0];stack=[{id:TAB_ROOT[parts[0]],p:{}}];parts.shift();}
+    if(parts[0]&&SCREENS[parts[0]]){
+      const p={};
+      if(parts[0]==='fed-details')p.id=parts[1]||'gbf';
+      if(parts[0]==='guardians')p.id=parts[1]||'gbf';
+      if(parts[0]==='receive'||parts[0]==='send')p.asset=parts[1]||'btc';
+      stack.push({id:parts[0],p});
+    }
+  }
+  renderControls();
+  render();
+})();
+</script>
+</body>
+</html>
