@@ -6,6 +6,8 @@ use fedimint_core::module::AmountUnit;
 use fedimint_core::module::serde_json;
 use fedimint_core::util::SafeUrl;
 use fedimint_eventlog::EventLogId;
+use fedimint_ln_client::LightningClientModule as LnV1ClientModule;
+use fedimint_ln_client::recurring::RecurringPaymentProtocol;
 use fedimint_lnv2_client::LightningClientModule;
 use fedimint_lnv2_common::Bolt11InvoiceDescription;
 use fedimint_mint_client::MintClientModule;
@@ -58,6 +60,38 @@ pub struct LnReceiveInvoice {
     pub invoice: String,
     pub gateway_url: String,
     pub fee_sats: i64,
+}
+
+/// Picks an LNv1 gateway. Probing gateways for availability can hang
+/// indefinitely on unreachable gateway APIs (the HTTP check has no timeout),
+/// so the probe is bounded and selection falls back to an unprobed gateway
+/// from the cache — the same behaviour `get_gateway(None, false)` ships.
+async fn select_lnv1_gateway(
+    module: &LnV1ClientModule,
+    invoice: Option<lightning_invoice::Bolt11Invoice>,
+) -> Result<fedimint_ln_common::LightningGateway, String> {
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        module.update_gateway_cache(),
+    )
+    .await;
+
+    if let Ok(Ok(gateway)) = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        module.select_available_gateway(None, invoice),
+    )
+    .await
+    {
+        return Ok(gateway);
+    }
+
+    module
+        .list_gateways()
+        .await
+        .into_iter()
+        .next()
+        .map(|announcement| announcement.info)
+        .ok_or_else(|| "No gateways available".to_string())
 }
 
 #[frb]
@@ -326,38 +360,66 @@ impl ConduitClient {
     /// recipient receives `amount_sat` minus `fee_sats`.
     #[frb]
     pub async fn ln_receive(&self, amount_sat: i64) -> Result<LnReceiveInvoice, String> {
-        let module = self
-            .client
-            .get_first_module::<LightningClientModule>()
-            .unwrap();
-
-        let (gateway, routing_info) =
-            module.select_gateway(None).await.map_err(|e| e.to_string())?;
-
         let amount = Amount::from_sats(amount_sat as u64);
 
-        let fee_sats = routing_info
-            .receive_fee
-            .fee(amount.msats)
-            .msats
-            .div_ceil(1000) as i64;
+        if let Ok(module) = self.client.get_first_module::<LightningClientModule>() {
+            let (gateway, routing_info) =
+                module.select_gateway(None).await.map_err(|e| e.to_string())?;
 
-        let invoice = module
-            .receive(
+            let fee_sats = routing_info
+                .receive_fee
+                .fee(amount.msats)
+                .msats
+                .div_ceil(1000) as i64;
+
+            let invoice = module
+                .receive(
+                    amount,
+                    60 * 60 * 24,
+                    Bolt11InvoiceDescription::Direct(String::new()),
+                    Some(gateway.clone()),
+                    ().into(),
+                )
+                .await
+                .map_err(|e| e.to_string())?
+                .0;
+
+            return Ok(LnReceiveInvoice {
+                invoice: invoice.to_string(),
+                gateway_url: gateway.to_string(),
+                fee_sats,
+            });
+        }
+
+        // LNv1: the gateway funds the incoming contract for the full invoice
+        // amount — no receive fee is deducted from the recipient.
+        let module = self
+            .client
+            .get_first_module::<LnV1ClientModule>()
+            .map_err(|e| e.to_string())?;
+
+        let gateway = select_lnv1_gateway(&module, None).await?;
+
+        let description = lightning_invoice::Bolt11InvoiceDescription::Direct(
+            lightning_invoice::Description::new(String::new())
+                .expect("empty invoice description is valid"),
+        );
+
+        let (_, invoice, _) = module
+            .create_bolt11_invoice(
                 amount,
-                60 * 60 * 24,
-                Bolt11InvoiceDescription::Direct(String::new()),
+                description,
+                Some(60 * 60 * 24),
+                (),
                 Some(gateway.clone()),
-                ().into(),
             )
             .await
-            .map_err(|e| e.to_string())?
-            .0;
+            .map_err(|e| e.to_string())?;
 
         Ok(LnReceiveInvoice {
             invoice: invoice.to_string(),
-            gateway_url: gateway.to_string(),
-            fee_sats,
+            gateway_url: gateway.api.to_string(),
+            fee_sats: 0,
         })
     }
 
@@ -370,33 +432,55 @@ impl ConduitClient {
         &self,
         invoice: &Bolt11InvoiceWrapper,
     ) -> Result<LnSendFees, String> {
-        let module = self
-            .client
-            .get_first_module::<LightningClientModule>()
-            .unwrap();
-
-        let (gateway, routing_info) = module
-            .select_gateway(Some(invoice.0.clone()))
-            .await
-            .map_err(|e| e.to_string())?;
-
         let amount_msats = invoice
             .0
             .amount_milli_satoshis()
             .ok_or("Invoice has no amount")?;
 
-        let (send_fee, _) = routing_info.send_parameters(&invoice.0);
+        if let Ok(module) = self.client.get_first_module::<LightningClientModule>() {
+            let (gateway, routing_info) = module
+                .select_gateway(Some(invoice.0.clone()))
+                .await
+                .map_err(|e| e.to_string())?;
 
-        let fee_sats = send_fee.fee(amount_msats).msats.div_ceil(1000) as i64;
+            let (send_fee, _) = routing_info.send_parameters(&invoice.0);
 
-        // A direct swap settles between fedimints when the invoice's payee is
-        // the gateway's own lightning node; otherwise it routes over lightning.
-        let is_direct =
-            invoice.0.recover_payee_pub_key() == routing_info.lightning_public_key;
+            let fee_sats = send_fee.fee(amount_msats).msats.div_ceil(1000) as i64;
+
+            // A direct swap settles between fedimints when the invoice's payee is
+            // the gateway's own lightning node; otherwise it routes over lightning.
+            let is_direct =
+                invoice.0.recover_payee_pub_key() == routing_info.lightning_public_key;
+
+            return Ok(LnSendFees {
+                gateway_url: gateway.to_string(),
+                fee_sats,
+                is_direct,
+            });
+        }
+
+        // LNv1: quote from the gateway's configured routing fees; payments to
+        // the gateway's own node settle internally at no fee.
+        let module = self
+            .client
+            .get_first_module::<LnV1ClientModule>()
+            .map_err(|e| e.to_string())?;
+
+        let gateway = select_lnv1_gateway(&module, Some(invoice.0.clone())).await?;
+
+        let is_direct = invoice.0.recover_payee_pub_key().serialize()
+            == gateway.node_pub_key.serialize();
+
+        let fee_msats = if is_direct {
+            0
+        } else {
+            gateway.fees.base_msat as u64
+                + (amount_msats * gateway.fees.proportional_millionths as u64) / 1_000_000
+        };
 
         Ok(LnSendFees {
-            gateway_url: gateway.to_string(),
-            fee_sats,
+            gateway_url: gateway.api.to_string(),
+            fee_sats: fee_msats.div_ceil(1000) as i64,
             is_direct,
         })
     }
@@ -411,28 +495,80 @@ impl ConduitClient {
         invoice: &Bolt11InvoiceWrapper,
         gateway: Option<String>,
     ) -> Result<OperationId, String> {
-        let gateway = match gateway {
-            Some(url) => Some(SafeUrl::parse(&url).map_err(|e| e.to_string())?),
+        if let Ok(module) = self.client.get_first_module::<LightningClientModule>() {
+            let gateway = match gateway {
+                Some(url) => Some(SafeUrl::parse(&url).map_err(|e| e.to_string())?),
+                None => None,
+            };
+
+            return module
+                .send(invoice.0.clone(), gateway, ().into())
+                .await
+                .map_err(|e| e.to_string());
+        }
+
+        // LNv1: resolve the quoted gateway by its API url (the identifier
+        // [`Self::ln_calculate_fees`] hands out), auto-selecting otherwise.
+        let module = self
+            .client
+            .get_first_module::<LnV1ClientModule>()
+            .map_err(|e| e.to_string())?;
+
+        let quoted = match &gateway {
+            Some(url) => module
+                .list_gateways()
+                .await
+                .into_iter()
+                .map(|announcement| announcement.info)
+                .find(|gateway| gateway.api.to_string() == *url),
             None => None,
         };
 
-        self.client
-            .get_first_module::<LightningClientModule>()
-            .unwrap()
-            .send(invoice.0.clone(), gateway, ().into())
+        let gateway = match quoted {
+            Some(gateway) => gateway,
+            None => select_lnv1_gateway(&module, Some(invoice.0.clone())).await?,
+        };
+
+        let payment = module
+            .pay_bolt11_invoice(Some(gateway), invoice.0.clone(), ())
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+
+        Ok(payment.payment_type.operation_id())
     }
 
     #[frb]
     pub async fn lnurl(&self) -> Result<String, String> {
         let recurringd = SafeUrl::parse("https://lnurl.fedimint.org").unwrap();
 
-        self.client
-            .get_first_module::<LightningClientModule>()
-            .unwrap()
-            .generate_lnurl(recurringd, None)
+        if let Ok(module) = self.client.get_first_module::<LightningClientModule>() {
+            return module
+                .generate_lnurl(recurringd, None)
+                .await
+                .map_err(|e| e.to_string());
+        }
+
+        // LNv1: recurring payment codes. Registration mints a fresh code each
+        // call, so reuse the code we already registered when there is one; the
+        // module's background scanner claims invoices paid to it.
+        let module = self
+            .client
+            .get_first_module::<LnV1ClientModule>()
+            .map_err(|e| e.to_string())?;
+
+        if let Some((_, entry)) = module
+            .list_recurring_payment_codes()
             .await
+            .into_iter()
+            .find(|(_, entry)| matches!(entry.protocol, RecurringPaymentProtocol::LNURL))
+        {
+            return Ok(entry.code);
+        }
+
+        module
+            .register_recurring_payment_code(RecurringPaymentProtocol::LNURL, recurringd, "")
+            .await
+            .map(|entry| entry.code)
             .map_err(|e| e.to_string())
     }
 

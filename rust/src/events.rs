@@ -1,5 +1,6 @@
 use fedimint_core::module::serde_json;
 use fedimint_eventlog::{Event, EventLogEntry};
+use fedimint_ln_client::events::SendPaymentStatus as LnV1SendPaymentStatus;
 use fedimint_lnv2_client::events::SendPaymentStatus;
 use fedimint_mint_client::events::ReceivePaymentStatus;
 use fedimint_mintv2_client::ReceivePaymentStatus as MintV2ReceivePaymentStatus;
@@ -105,6 +106,66 @@ pub(crate) fn snapshot(payments: &[ConduitPayment], count: usize) -> Vec<Conduit
 }
 
 pub(crate) fn parse_event_log_entry(entry: &EventLogEntry) -> Option<ParsedEvent> {
+    // LNv1 events (module kind "ln"); same shapes as the LNv2 ones below.
+
+    if let Some(send) = parse::<fedimint_ln_client::events::SendPaymentEvent>(entry) {
+        return Some(ParsedEvent::Payment {
+            operation_id: send.operation_id,
+            payment: ConduitPayment {
+                operation_id: send.operation_id.fmt_full().to_string(),
+                incoming: false,
+                payment_type: PaymentType::Lightning,
+                amount_sats: (send.amount.msats / 1000) as i64,
+                fee_sats: Some((send.fee.msats / 1000) as i64),
+                timestamp: (entry.ts_usecs / 1000) as i64,
+                success: None,
+                ecash: None,
+                txid: None,
+                address: None,
+                fiat_amount: None,
+                fiat_currency_code: None,
+                preimage: None,
+            },
+        });
+    }
+
+    if let Some(update) = parse::<fedimint_ln_client::events::SendPaymentUpdateEvent>(entry) {
+        let (success, preimage) = match update.status {
+            LnV1SendPaymentStatus::Success(preimage) => {
+                (true, Some(preimage.as_slice().to_lower_hex_string()))
+            }
+            LnV1SendPaymentStatus::Refunded => (false, None),
+        };
+
+        return Some(ParsedEvent::Update {
+            operation_id: update.operation_id,
+            success,
+            txid: None,
+            preimage,
+        });
+    }
+
+    if let Some(receive) = parse::<fedimint_ln_client::events::ReceivePaymentEvent>(entry) {
+        return Some(ParsedEvent::Payment {
+            operation_id: receive.operation_id,
+            payment: ConduitPayment {
+                operation_id: receive.operation_id.fmt_full().to_string(),
+                incoming: true,
+                payment_type: PaymentType::Lightning,
+                amount_sats: (receive.amount.msats / 1000) as i64,
+                fee_sats: None,
+                timestamp: (entry.ts_usecs / 1000) as i64,
+                success: Some(true),
+                ecash: None,
+                txid: None,
+                address: None,
+                fiat_amount: None,
+                fiat_currency_code: None,
+                preimage: None,
+            },
+        });
+    }
+
     if let Some(send) = parse::<fedimint_lnv2_client::events::SendPaymentEvent>(entry) {
         return Some(ParsedEvent::Payment {
             operation_id: send.operation_id,

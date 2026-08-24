@@ -17,6 +17,8 @@ use fedimint_connectors::ConnectorRegistry;
 use fedimint_core::BitcoinHash;
 use fedimint_core::config::{ClientConfig, FederationId};
 use fedimint_core::db::{Database, IDatabaseTransactionOpsCore, IDatabaseTransactionOpsCoreTyped};
+use fedimint_ln_client::LightningClientInit as LnV1ClientInit;
+use fedimint_ln_common::KIND as LNV1_KIND;
 use fedimint_lnv2_client::LightningClientInit;
 use fedimint_lnv2_common::KIND as LIGHTNING_KIND;
 use fedimint_meta_client::{MetaClientInit, MetaModuleMetaSourceWithFallback};
@@ -98,10 +100,24 @@ fn ensure_one_of(config: &ClientConfig, a: &ModuleKind, b: &ModuleKind) -> Resul
     }
 }
 
-fn ensure_module(config: &ClientConfig, kind: &ModuleKind) -> Result<(), String> {
-    match config.modules.values().any(|module| module.kind() == kind) {
+/// At least one of `kinds` must be present. Unlike [`ensure_one_of`] this
+/// allows several to coexist — federations run both `ln` and `lnv2` during
+/// the LNv2 migration, and the client simply prefers v2.
+fn ensure_any(config: &ClientConfig, kinds: &[&ModuleKind]) -> Result<(), String> {
+    let present = kinds
+        .iter()
+        .any(|kind| config.modules.values().any(|module| module.kind() == *kind));
+
+    match present {
         true => Ok(()),
-        false => Err(format!("Module {} is not present", kind)),
+        false => Err(format!(
+            "None of the modules {} are present",
+            kinds
+                .iter()
+                .map(|kind| kind.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
     }
 }
 
@@ -144,6 +160,7 @@ impl ConduitClientFactory {
 
         modules.attach(MintClientInit);
         modules.attach(MintV2ClientInit);
+        modules.attach(LnV1ClientInit { gateway_conn: None });
         modules.attach(LightningClientInit::default());
         modules.attach(WalletClientInit::default());
         modules.attach(WalletV2ClientInit);
@@ -199,7 +216,7 @@ impl ConduitClientFactory {
             .await
             .map_err(|e| e.to_string())?;
 
-        ensure_module(&preview.config(), &LIGHTNING_KIND)?;
+        ensure_any(&preview.config(), &[&LNV1_KIND, &LIGHTNING_KIND])?;
         ensure_one_of(&preview.config(), &MINT_KIND, &MINTV2_KIND)?;
         ensure_one_of(&preview.config(), &WALLET_KIND, &WALLETV2_KIND)?;
 
@@ -228,7 +245,7 @@ impl ConduitClientFactory {
             .await
             .map_err(|e| e.to_string())?;
 
-        ensure_module(&preview.config(), &LIGHTNING_KIND)?;
+        ensure_any(&preview.config(), &[&LNV1_KIND, &LIGHTNING_KIND])?;
         ensure_one_of(&preview.config(), &MINT_KIND, &MINTV2_KIND)?;
         ensure_one_of(&preview.config(), &WALLET_KIND, &WALLETV2_KIND)?;
 
