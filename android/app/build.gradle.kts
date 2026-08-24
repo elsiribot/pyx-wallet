@@ -40,8 +40,11 @@ android {
         ndk {
             abiFilters.add("arm64-v8a")
             // x86_64 is only needed for the local redroid container used in
-            // the design-verification loop
-            abiFilters.add("x86_64")
+            // the design-verification loop (tool/build-android-nix.sh sets
+            // this); release APKs stay arm64-only.
+            if (System.getenv("PYX_ABI_X86_64") == "1") {
+                abiFilters.add("x86_64")
+            }
         }
     }
 

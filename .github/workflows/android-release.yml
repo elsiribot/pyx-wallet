@@ -1,4 +1,4 @@
-name: Android Release
+name: Android APK
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # Required for creating releases
+  contents: write # Required for updating the rolling release
 
 jobs:
   build:
@@ -19,7 +19,9 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.38.7'
+          # Matches the flake.nix dev shell; gradle 8.14.3 / AGP 8.11.1 /
+          # Kotlin 2.2.20 in the repo are this version's minimums.
+          flutter-version: '3.47.0'
           channel: 'stable'
 
       - name: Set up Rust
@@ -28,16 +30,29 @@ jobs:
           toolchain: stable
           targets: aarch64-linux-android
 
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
       - name: Install Android NDK
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
 
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk
+        run: command -v cargo-ndk || cargo install cargo-ndk
 
       - name: Install Flutter Rust Bridge CLI
-        run: cargo install flutter_rust_bridge_codegen --version "2.10.0" --locked
+        run: |
+          flutter_rust_bridge_codegen --version 2>/dev/null | grep -q 2.10.0 \
+            || cargo install flutter_rust_bridge_codegen --version "2.10.0" --locked
 
       - name: Install Flutter dependencies
         run: flutter pub get
@@ -52,14 +67,10 @@ jobs:
           mkdir -p "$JNI_LIBS_DIR"
 
           cd "$ROOT/rust"
-          # 16KB page alignment for Android 15+ compatibility; --crate-type=cdylib
-          # because Cargo.toml declares no [lib] crate-type.
-          # --platform 24: build against Android API 24 (matches the app
-          # minSdk). The bundled RocksDB uses posix_madvise / POSIX_MADV_*,
-          # which only exist at API >= 23, so the cargo-ndk default of 21 fails
-          # to compile.
+          # 16KB page alignment for Android 15+; --platform 24 because the
+          # bundled RocksDB uses POSIX_MADV_* (API >= 23).
           RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384" \
-            cargo ndk -t arm64-v8a --platform 24 rustc --release --crate-type=cdylib
+            cargo ndk -t arm64-v8a --platform 24 build --release
 
           cp "$ROOT/rust/target/aarch64-linux-android/release/libconduit.so" "$JNI_LIBS_DIR/"
 
@@ -80,14 +91,25 @@ jobs:
         run: flutter build apk --release
 
       - name: Rename APK
-        run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/conduit.apk
+        run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/pyx-wallet.apk
 
-      - name: Upload to Release
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyx-wallet-apk
+          path: build/app/outputs/flutter-apk/pyx-wallet.apk
+
+      - name: Update rolling release
         uses: ncipollo/release-action@v1
         with:
           tag: latest
-          name: "Latest Android Release"
-          artifacts: "build/app/outputs/flutter-apk/conduit.apk"
+          name: 'Pyx Wallet (latest)'
+          body: |
+            Rolling build of the `main` branch — signed, arm64.
+            Download `pyx-wallet.apk` below and open it on your phone to
+            install/update (same signing key every build, so updates
+            install over the previous version).
+          artifacts: 'build/app/outputs/flutter-apk/pyx-wallet.apk'
           allowUpdates: true
           replacesArtifacts: true
           draft: false

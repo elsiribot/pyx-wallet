@@ -24,5 +24,6 @@ cp "$SYSROOT/x86_64-linux-android/libc++_shared.so" \
 
 echo "📦 Building APK ($MODE)..."
 cd "$ROOT"
-flutter build apk "$MODE"
+# Local builds also package x86_64 for the redroid design-verification loop
+PYX_ABI_X86_64=1 flutter build apk "$MODE"
 echo "✅ $(ls build/app/outputs/flutter-apk/*.apk)"
