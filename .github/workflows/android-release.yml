@@ -9,6 +9,11 @@ on:
 permissions:
   contents: write # Required for updating the rolling release
 
+# A newer push supersedes any in-flight build of the same branch
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
