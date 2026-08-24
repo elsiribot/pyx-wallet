@@ -47,8 +47,6 @@ class FederationScreen extends StatefulWidget {
 
 class _FederationScreenState extends State<FederationScreen> {
   late final Stream<RecentPaymentsUpdate> _eventStream;
-  late final Stream<int> _balanceStream;
-  late final Stream<List<(String, bool)>> _connectionStream;
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
   int? _expirationDate;
@@ -59,13 +57,30 @@ class _FederationScreenState extends State<FederationScreen> {
   List<ConduitPayment> _payments = [];
   StreamSubscription<RecentPaymentsUpdate>? _paymentsSubscription;
 
+  // Balance and guardian status are held as plain state fed by one
+  // subscription each. The FRB streams are single-subscription and their
+  // rust task ends when the sink closes, so a StreamBuilder is fragile
+  // here: any structural change above it in the tree (e.g. the expiry
+  // card appearing) re-creates the builder, which cannot re-listen, and
+  // the balance freezes.
+  int _balanceSats = 0;
+  StreamSubscription<int>? _balanceSubscription;
+  List<(String, bool)> _guardianStatuses = [];
+  StreamSubscription<List<(String, bool)>>? _connectionSubscription;
+
   @override
   void initState() {
     super.initState();
     _eventStream = widget.client.subscribeEventLog();
-    _balanceStream = widget.client.subscribeBalance();
-    _connectionStream = widget.client.subscribeConnectionStatus();
     _paymentsSubscription = _eventStream.listen(_onPaymentsUpdate);
+    _balanceSubscription = widget.client.subscribeBalance().listen((sats) {
+      if (mounted) setState(() => _balanceSats = sats);
+    });
+    _connectionSubscription = widget.client.subscribeConnectionStatus().listen((
+      statuses,
+    ) {
+      if (mounted) setState(() => _guardianStatuses = statuses);
+    });
     _initDeepLinks();
     _fetchExpirationStatus();
     // Warm the exchange-rate cache so the fiat toggle is reachable and the
@@ -115,6 +130,8 @@ class _FederationScreenState extends State<FederationScreen> {
   @override
   void dispose() {
     _paymentsSubscription?.cancel();
+    _balanceSubscription?.cancel();
+    _connectionSubscription?.cancel();
     _linkSubscription?.cancel();
     widget.client.shutdown();
     super.dispose();
@@ -179,10 +196,11 @@ class _FederationScreenState extends State<FederationScreen> {
   void _onCreateInvoice() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ReceiveScreen(
-          client: widget.client,
-          clientFactory: widget.clientFactory,
-        ),
+        builder:
+            (_) => ReceiveScreen(
+              client: widget.client,
+              clientFactory: widget.clientFactory,
+            ),
       ),
     );
   }
@@ -190,15 +208,14 @@ class _FederationScreenState extends State<FederationScreen> {
   void _onSend() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SendScreen(
-          client: widget.client,
-          clientFactory: widget.clientFactory,
-        ),
+        builder:
+            (_) => SendScreen(
+              client: widget.client,
+              clientFactory: widget.clientFactory,
+            ),
       ),
     );
   }
-
-
 
   void _onLightningAddress() {
     Navigator.of(context).push(
@@ -317,71 +334,58 @@ class _FederationScreenState extends State<FederationScreen> {
               ),
               child: Row(
                 children: [
-                  IconBtn(
-                    onTap: _onSettings,
-                    child: Icon(PyxIcons.gearSix),
-                  ),
+                  IconBtn(onTap: _onSettings, child: Icon(PyxIcons.gearSix)),
                   const Spacer(),
                   IconBtn(
-                    child: Icon(
-                      _masked ? PyxIcons.eyeSlash : PyxIcons.eye,
-                    ),
+                    child: Icon(_masked ? PyxIcons.eyeSlash : PyxIcons.eye),
                     onTap: () => setState(() => _masked = !_masked),
                   ),
                   const SizedBox(width: 10),
-                  StreamBuilder<List<(String, bool)>>(
-                    stream: _connectionStream,
-                    builder: (context, snapshot) {
-                      final statuses = snapshot.data ?? const [];
-                      final connected =
-                          statuses.where((s) => s.$2).length;
-                      return Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          IconBtn(
-                            child: Icon(PyxIcons.usersThree),
-                            onTap: () => Navigator.of(context).push(
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      IconBtn(
+                        child: Icon(PyxIcons.usersThree),
+                        onTap:
+                            () => Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => ConnectionStatusScreen(
-                                  client: widget.client,
-                                ),
+                                builder:
+                                    (_) => ConnectionStatusScreen(
+                                      client: widget.client,
+                                    ),
                               ),
                             ),
+                      ),
+                      if (_guardianStatuses.isNotEmpty)
+                        Positioned.fill(
+                          child: GuardianRing(
+                            online: _guardianStatuses.where((s) => s.$2).length,
+                            total: _guardianStatuses.length,
                           ),
-                          if (statuses.isNotEmpty)
-                            Positioned.fill(
-                              child: GuardianRing(
-                                online: connected,
-                                total: statuses.length,
-                              ),
-                            ),
-                        ],
-                      );
-                    },
+                        ),
+                    ],
                   ),
                 ],
               ),
             ),
             if (_expirationDate case final date?)
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: Gaps.screenH),
+                padding: const EdgeInsets.symmetric(horizontal: Gaps.screenH),
                 child: _buildExpiryCard(date),
               ),
             Expanded(
-              child: StreamBuilder<int>(
-                stream: _balanceStream,
-                builder: (context, snapshot) {
-                  final sats = snapshot.data ?? 0;
-                  final fiat = cachedFiatAmount(widget.client, sats);
+              child: Builder(
+                builder: (context) {
+                  final fiat = cachedFiatAmount(widget.client, _balanceSats);
                   return HomeBody(
-                    amount: NumberFormat('#,###')
-                        .format(sats)
-                        .replaceAll(',', ' '),
+                    amount: NumberFormat(
+                      '#,###',
+                    ).format(_balanceSats).replaceAll(',', ' '),
                     // Prototype writes "≈ €3.45" — symbol tight to the number
-                    fiat: fiat == null
-                        ? null
-                        : '≈ ${fiat.amount.replaceFirst(' ', '')}',
+                    fiat:
+                        fiat == null
+                            ? null
+                            : '≈ ${fiat.amount.replaceFirst(' ', '')}',
                     masked: _masked,
                     payments: _payments,
                     onReceive: _onCreateInvoice,
@@ -401,14 +405,14 @@ class _FederationScreenState extends State<FederationScreen> {
   void _onSettings() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SettingsScreen(
-          client: widget.client,
-          clientFactory: widget.clientFactory,
-          onLightningAddress: _onLightningAddress,
-          onContacts: _onContacts,
-        ),
+        builder:
+            (_) => SettingsScreen(
+              client: widget.client,
+              clientFactory: widget.clientFactory,
+              onLightningAddress: _onLightningAddress,
+              onContacts: _onContacts,
+            ),
       ),
     );
   }
 }
-

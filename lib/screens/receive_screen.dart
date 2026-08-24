@@ -58,9 +58,10 @@ class _ReceiveScreenState extends State<ReceiveScreen> {
     super.initState();
     widget.client.lnurl().then((v) {
       if (mounted) setState(() => _lnurl = v);
-    }).catchError((_) {
+    }).catchError((e) {
       // Mirrors the prototype's CONFIG.lnurl=false state: fall back to
       // amount-derived invoices only.
+      debugPrint('lnurl unavailable: $e');
       if (mounted) setState(() => _lnurlUnavailable = true);
     });
     _loadAddress();

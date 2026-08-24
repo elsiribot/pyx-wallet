@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:conduit/bridge_generated.dart/client.dart';
@@ -11,219 +13,243 @@ import 'package:conduit/theme/tokens.dart';
 /// Federation details — mirrors prototype.html `fed-details`
 /// (lines 2101-2160): centered provider avatar, name/guardians card,
 /// module pills, guardian list with per-guardian sheet.
-class ConnectionStatusScreen extends StatelessWidget {
+class ConnectionStatusScreen extends StatefulWidget {
   final ConduitClient client;
 
   const ConnectionStatusScreen({super.key, required this.client});
+
+  @override
+  State<ConnectionStatusScreen> createState() => _ConnectionStatusScreenState();
+}
+
+class _ConnectionStatusScreenState extends State<ConnectionStatusScreen> {
+  ConduitClient get client => widget.client;
+
+  // Held as state fed by one subscription: the FRB stream is
+  // single-subscription, so a StreamBuilder recreated by a parent rebuild
+  // (here: the federation-name future resolving) cannot re-listen.
+  String? _name;
+  List<(String, bool)> _statuses = const [];
+  StreamSubscription<List<(String, bool)>>? _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    client.federationName().then((name) {
+      if (mounted) setState(() => _name = name);
+    });
+    _subscription = client.subscribeConnectionStatus().listen((statuses) {
+      if (mounted) setState(() => _statuses = statuses);
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
 
   /// BFT quorum: n guardians tolerate f = (n-1) ~/ 3 faults.
   static int _quorum(int n) => n - (n - 1) ~/ 3;
 
   @override
   Widget build(BuildContext context) {
+    final name = _name ?? 'Federation';
+    final statuses = _statuses;
+    final online = statuses.where((s) => s.$2).length;
+    final total = statuses.length;
+    final statusColor =
+        total == 0
+            ? Palette.muted
+            : online >= total
+            ? Palette.green
+            : online >= _quorum(total)
+            ? Palette.amber
+            : Palette.red;
     return Scaffold(
       body: SafeArea(
-        child: FutureBuilder<String?>(
-          future: client.federationName(),
-          builder: (context, nameSnapshot) {
-            final name = nameSnapshot.data ?? 'Federation';
-            return StreamBuilder<List<(String, bool)>>(
-              stream: client.subscribeConnectionStatus(),
-              builder: (context, snapshot) {
-                final statuses = snapshot.data ?? const <(String, bool)>[];
-                final online = statuses.where((s) => s.$2).length;
-                final total = statuses.length;
-                final statusColor = total == 0
-                    ? Palette.muted
-                    : online >= total
-                        ? Palette.green
-                        : online >= _quorum(total)
-                            ? Palette.amber
-                            : Palette.red;
-                return Column(
-                  children: [
-                    // Centered topbar (prototype fed-details is centered)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                          Gaps.screenH, 6, Gaps.screenH, 14),
-                      child: Stack(
+        child: Column(
+          children: [
+            // Centered topbar (prototype fed-details is centered)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Gaps.screenH,
+                6,
+                Gaps.screenH,
+                14,
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  const Center(
+                    child: Text('Wallet Provider', style: Type.titleCentered),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconBtn(
+                      bare: true,
+                      onTap: () => Navigator.of(context).pop(),
+                      child: const Icon(PyxIcons.caretLeft),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(
+                  Gaps.screenH,
+                  0,
+                  Gaps.screenH,
+                  26,
+                ),
+                children: [
+                  // Big provider avatar
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 24),
+                    child: Center(
+                      child: Container(
+                        width: 122,
+                        height: 122,
                         alignment: Alignment.center,
-                        children: [
-                          const Center(
-                            child: Text('Wallet Provider',
-                                style: Type.titleCentered),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            center: const Alignment(-0.3, -0.4),
+                            colors: [
+                              Color.lerp(Palette.teal, Colors.white, 0.2)!,
+                              Color.lerp(Palette.teal, Palette.bg, 0.5)!,
+                            ],
                           ),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: IconBtn(
-                              bare: true,
-                              onTap: () => Navigator.of(context).pop(),
-                              child: const Icon(PyxIcons.caretLeft),
-                            ),
+                          border: Border.all(color: Palette.border),
+                        ),
+                        child: Text(
+                          name.isEmpty ? '?' : name[0].toUpperCase(),
+                          style: const TextStyle(
+                            fontFamily: Fonts.display,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 54,
+                            color: Colors.white,
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(
-                            Gaps.screenH, 0, Gaps.screenH, 26),
-                        children: [
-                          // Big provider avatar
-                          Padding(
-                            padding:
-                                const EdgeInsets.only(top: 6, bottom: 24),
-                            child: Center(
-                              child: Container(
-                                width: 122,
-                                height: 122,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: RadialGradient(
-                                    center: const Alignment(-0.3, -0.4),
-                                    colors: [
-                                      Color.lerp(Palette.teal,
-                                          Colors.white, 0.2)!,
-                                      Color.lerp(
-                                          Palette.teal, Palette.bg, 0.5)!,
-                                    ],
-                                  ),
-                                  border:
-                                      Border.all(color: Palette.border),
-                                ),
-                                child: Text(
-                                  name.isEmpty
-                                      ? '?'
-                                      : name[0].toUpperCase(),
-                                  style: const TextStyle(
-                                    fontFamily: Fonts.display,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 54,
-                                    color: Colors.white,
-                                  ),
+                  ),
+                  PyxCard(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Gaps.cardPad,
+                      vertical: 4,
+                    ),
+                    child: Column(
+                      children: [
+                        DRow.text(k: 'Name', value: name),
+                        DRow(
+                          k: 'Guardians',
+                          showDivider: false,
+                          v: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                '$online of $total online',
+                                style: Type.drowValue.copyWith(
+                                  color: statusColor,
                                 ),
                               ),
-                            ),
+                              Text(
+                                'Quorum requires ${_quorum(total)} of $total',
+                                style: Type.rowSub.copyWith(fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SectionLabel(
+                    'Modules',
+                    margin: EdgeInsets.only(top: 24, bottom: 12),
+                  ),
+                  Wrap(
+                    spacing: 9,
+                    runSpacing: 9,
+                    children: const [
+                      _ModPill(icon: PyxIcons.lightning, label: 'Lightning'),
+                      _ModPill(icon: PyxIcons.coinVertical, label: 'Ecash'),
+                      _ModPill(icon: PyxIcons.link, label: 'On-chain'),
+                    ],
+                  ),
+                  SectionLabel(
+                    'Guardians',
+                    margin: const EdgeInsets.only(top: 26, bottom: 12),
+                    trailing: Text(
+                      '$online / $total online',
+                      style: Type.rowSub.copyWith(fontSize: 12),
+                    ),
+                  ),
+                  for (var i = 0; i < statuses.length; i++) ...[
+                    _GuardianCard(
+                      name: statuses[i].$1,
+                      online: statuses[i].$2,
+                      colorSeed: i,
+                      onTap:
+                          () => _openGuardian(
+                            context,
+                            statuses[i].$1,
+                            statuses[i].$2,
+                          ),
+                    ),
+                    const SizedBox(height: 9),
+                  ],
+                  FutureBuilder<FederationStats?>(
+                    future: client.federationStats(),
+                    builder: (context, stats) {
+                      final s = stats.data;
+                      if (s == null) {
+                        return const SizedBox.shrink();
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SectionLabel(
+                            'Federation',
+                            margin: EdgeInsets.only(top: 24, bottom: 12),
                           ),
                           PyxCard(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: Gaps.cardPad, vertical: 4),
+                              horizontal: Gaps.cardPad,
+                              vertical: 4,
+                            ),
                             child: Column(
                               children: [
-                                DRow.text(k: 'Name', value: name),
-                                DRow(
-                                  k: 'Guardians',
-                                  showDivider: false,
-                                  v: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        '$online of $total online',
-                                        style: Type.drowValue.copyWith(
-                                            color: statusColor),
-                                      ),
-                                      Text(
-                                        'Quorum requires ${_quorum(total)} of $total',
-                                        style: Type.rowSub
-                                            .copyWith(fontSize: 12),
-                                      ),
-                                    ],
-                                  ),
+                                DRow.text(
+                                  k: 'Total value',
+                                  value:
+                                      '${NumberFormat('#,###').format(s.totalValueSat).replaceAll(',', ' ')} SATS',
                                 ),
+                                DRow.text(
+                                  k: 'Block height',
+                                  value: NumberFormat(
+                                    '#,###',
+                                  ).format(s.blockCount),
+                                  showDivider: s.feerate != null,
+                                ),
+                                if (s.feerate case final f?)
+                                  DRow.text(
+                                    k: 'Feerate',
+                                    value: '$f sat/vB',
+                                    showDivider: false,
+                                  ),
                               ],
                             ),
                           ),
-                          const SectionLabel('Modules',
-                              margin:
-                                  EdgeInsets.only(top: 24, bottom: 12)),
-                          Wrap(
-                            spacing: 9,
-                            runSpacing: 9,
-                            children: const [
-                              _ModPill(
-                                  icon: PyxIcons.lightning,
-                                  label: 'Lightning'),
-                              _ModPill(
-                                  icon: PyxIcons.coinVertical,
-                                  label: 'Ecash'),
-                              _ModPill(
-                                  icon: PyxIcons.link, label: 'On-chain'),
-                            ],
-                          ),
-                          SectionLabel(
-                            'Guardians',
-                            margin:
-                                const EdgeInsets.only(top: 26, bottom: 12),
-                            trailing: Text(
-                              '$online / $total online',
-                              style:
-                                  Type.rowSub.copyWith(fontSize: 12),
-                            ),
-                          ),
-                          for (var i = 0; i < statuses.length; i++) ...[
-                            _GuardianCard(
-                              name: statuses[i].$1,
-                              online: statuses[i].$2,
-                              colorSeed: i,
-                              onTap: () => _openGuardian(
-                                  context, statuses[i].$1, statuses[i].$2),
-                            ),
-                            const SizedBox(height: 9),
-                          ],
-                          FutureBuilder<FederationStats?>(
-                            future: client.federationStats(),
-                            builder: (context, stats) {
-                              final s = stats.data;
-                              if (s == null) {
-                                return const SizedBox.shrink();
-                              }
-                              return Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.stretch,
-                                children: [
-                                  const SectionLabel('Federation',
-                                      margin: EdgeInsets.only(
-                                          top: 24, bottom: 12)),
-                                  PyxCard(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: Gaps.cardPad,
-                                        vertical: 4),
-                                    child: Column(
-                                      children: [
-                                        DRow.text(
-                                          k: 'Total value',
-                                          value:
-                                              '${NumberFormat('#,###').format(s.totalValueSat).replaceAll(',', ' ')} SATS',
-                                        ),
-                                        DRow.text(
-                                          k: 'Block height',
-                                          value: NumberFormat('#,###')
-                                              .format(s.blockCount),
-                                          showDivider: s.feerate != null,
-                                        ),
-                                        if (s.feerate case final f?)
-                                          DRow.text(
-                                            k: 'Feerate',
-                                            value: '$f sat/vB',
-                                            showDivider: false,
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
                         ],
-                      ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -237,16 +263,13 @@ class ConnectionStatusScreen extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Center(
-            child: Text(name, style: Type.sheetTitle),
-          ),
+          Center(child: Text(name, style: Type.sheetTitle)),
           const SizedBox(height: 6),
           Center(
             child: PyxBadge(
               online ? 'Online' : 'Offline',
               color: online ? Palette.green : Palette.burnt,
-              leading:
-                  StatusDot(online ? StatusKind.on : StatusKind.off),
+              leading: StatusDot(online ? StatusKind.on : StatusKind.off),
             ),
           ),
           const SizedBox(height: 12),
@@ -299,14 +322,18 @@ class _GuardianCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = Palette
-        .guardianPalette[colorSeed % Palette.guardianPalette.length];
+    final color =
+        Palette.guardianPalette[colorSeed % Palette.guardianPalette.length];
     return PyxCard(
       onTap: onTap,
       padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
       child: Row(
         children: [
-          AvatarCircle(size: 38, label: name.isEmpty ? '?' : name[0], color: color),
+          AvatarCircle(
+            size: 38,
+            label: name.isEmpty ? '?' : name[0],
+            color: color,
+          ),
           const SizedBox(width: Gaps.rowGap),
           Expanded(
             child: Column(

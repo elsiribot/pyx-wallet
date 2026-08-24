@@ -539,17 +539,35 @@ impl ConduitClient {
 
     #[frb]
     pub async fn lnurl(&self) -> Result<String, String> {
-        let recurringd = SafeUrl::parse("https://lnurl.fedimint.org").unwrap();
-
         if let Ok(module) = self.client.get_first_module::<LightningClientModule>() {
+            // LNv2 lnurl requests are self-contained, so fedimint's hosted
+            // recurringd serves any federation.
+            let recurringd = SafeUrl::parse("https://lnurl.fedimint.org").unwrap();
+
             return module
                 .generate_lnurl(recurringd, None)
                 .await
                 .map_err(|e| e.to_string());
         }
 
-        // LNv1: recurring payment codes. Registration mints a fresh code each
-        // call, so reuse the code we already registered when there is one; the
+        // LNv1: recurring payment codes must be registered with a recurringd
+        // instance that serves this specific federation, which the federation
+        // advertises via the `recurringd_api` meta field
+        // (docs/meta_fields/recurringd_api.md in fedimint).
+        let recurringd = self
+            .client
+            .meta_service()
+            .get_field::<String>(self.client.db(), "recurringd_api")
+            .await
+            .and_then(|mv| mv.value)
+            // Meta override sources may deliver the value json-escaped a
+            // second time ("\"https://…\"") and this fetch path does not
+            // unpeel it — strip a stray quoting layer before parsing.
+            .and_then(|url| SafeUrl::parse(url.trim().trim_matches('"')).ok())
+            .ok_or("Federation does not advertise a recurringd_api meta field")?;
+
+        // Registration mints a fresh code each call, so reuse the code we
+        // already registered against this recurringd when there is one; the
         // module's background scanner claims invoices paid to it.
         let module = self
             .client
@@ -560,7 +578,10 @@ impl ConduitClient {
             .list_recurring_payment_codes()
             .await
             .into_iter()
-            .find(|(_, entry)| matches!(entry.protocol, RecurringPaymentProtocol::LNURL))
+            .find(|(_, entry)| {
+                matches!(entry.protocol, RecurringPaymentProtocol::LNURL)
+                    && entry.recurringd_api == recurringd
+            })
         {
             return Ok(entry.code);
         }
