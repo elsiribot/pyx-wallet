@@ -15,7 +15,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "app.conduit.wallet"
+    namespace = "cash.pyx.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
 
@@ -29,7 +29,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "app.conduit.wallet"
+        applicationId = "cash.pyx.app"
         // Native libs are built with cargo-ndk --platform 24 (POSIX_MADV_* in
         // rocksdb needs API >= 23)
         minSdk = maxOf(24, flutter.minSdkVersion)

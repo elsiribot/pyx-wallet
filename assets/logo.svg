@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Pyx Wallet mark: a P-stamped coin dropping into an open pyx — the
+       Royal Mint's coin-testing chest (Trial of the Pyx). Stroke style
+       matches the app's Lucide icons; the chest front is background-filled
+       so it occludes the coin's lower rim. -->
+  <g stroke="#FF9410" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <circle cx="512" cy="385" r="165" stroke-width="56"/>
+    <path d="M470 310 V460 M470 310 H506 a55 55 0 0 1 0 110 H470" stroke-width="42"/>
+    <path d="M272 540 V660 Q272 748 360 748 H664 Q752 748 752 660 V540"
+          fill="#0B0D11" stroke="none"/>
+    <path d="M272 540 V660 Q272 748 360 748 H664 Q752 748 752 660 V540" stroke-width="56"/>
+  </g>
+</svg>

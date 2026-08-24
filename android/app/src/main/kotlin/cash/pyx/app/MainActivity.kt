@@ -1,4 +1,4 @@
-package app.conduit.wallet
+package cash.pyx.app
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 
