@@ -1,14 +1,62 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <rect width="1024" height="1024" fill="#0B0D11"/>
-  <!-- Pyx Wallet mark: a P-stamped coin dropping into an open pyx — the
-       Royal Mint's coin-testing chest (Trial of the Pyx). Stroke style
-       matches the app's Lucide icons; the chest front is background-filled
-       so it occludes the coin's lower rim. -->
-  <g stroke="#FF9410" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <circle cx="512" cy="385" r="165" stroke-width="56"/>
-    <path d="M470 310 V460 M470 310 H506 a55 55 0 0 1 0 110 H470" stroke-width="42"/>
-    <path d="M272 540 V660 Q272 748 360 748 H664 Q752 748 752 660 V540"
-          fill="#0B0D11" stroke="none"/>
-    <path d="M272 540 V660 Q272 748 360 748 H664 Q752 748 752 660 V540" stroke-width="56"/>
+  <g transform="translate(512 512) scale(1.3) translate(-512 -500)">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFC24A"/>
+      <stop offset="1" stop-color="#F7931A"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <!-- rounded vertical hexagon -->
+    <path id="hex" d="M472.7 257.8 Q512 234 551.3 257.8
+      L680.7 336.2 Q720 360 720 406 L720 594 Q720 640 680.7 663.8
+      L551.3 742.2 Q512 766 472.7 742.2 L343.3 663.8 Q304 640 304 594
+      L304 406 Q304 360 343.3 336.2 Z"/>
+  </defs>
+
+  <!-- speed lines (hexagon covers their inner ends) -->
+  <g stroke="url(#gold)" stroke-width="24" stroke-linecap="round">
+    <g filter="url(#glow)" opacity="0.55">
+      <path d="M210 445 H400 M158 500 H400 M210 555 H400"/>
+      <path d="M814 445 H624 M866 500 H624 M814 555 H624"/>
+    </g>
+    <path d="M210 445 H400 M158 500 H400 M210 555 H400"/>
+    <path d="M814 445 H624 M866 500 H624 M814 555 H624"/>
+  </g>
+
+  <!-- hexagon shield -->
+  <use href="#hex" fill="none" stroke="#F7931A" stroke-width="40"
+       filter="url(#glow)" opacity="0.4"/>
+  <use href="#hex" fill="#21262E" stroke="#3A4049" stroke-width="34"/>
+  <g transform="translate(512 500) scale(0.87) translate(-512 -500)">
+    <use href="#hex" fill="#1B1F26" stroke="#14171C" stroke-width="16"/>
+  </g>
+
+  <!-- stems from ring to cardinal dots -->
+  <g stroke="#8A6B2F" stroke-width="12" stroke-linecap="round">
+    <path d="M512 382 V344 M512 618 V656 M394 500 H356 M630 500 H668"/>
+  </g>
+
+  <!-- central ring -->
+  <circle cx="512" cy="500" r="118" fill="#14171C" stroke="#A87F3A" stroke-width="15"/>
+
+  <!-- 4-point star -->
+  <path d="M512 416
+           C520 465 547 492 596 500
+           C547 508 520 535 512 584
+           C504 535 477 508 428 500
+           C477 492 504 465 512 416 Z"
+        fill="url(#gold)" stroke="url(#gold)" stroke-width="10"
+        stroke-linejoin="round"/>
+
+  <!-- cardinal dots -->
+  <g fill="url(#gold)">
+    <circle cx="512" cy="330" r="33"/>
+    <circle cx="512" cy="670" r="33"/>
+    <circle cx="342" cy="500" r="33"/>
+    <circle cx="682" cy="500" r="33"/>
+  </g>
   </g>
 </svg>
