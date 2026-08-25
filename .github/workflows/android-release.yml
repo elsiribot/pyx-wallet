@@ -114,28 +114,35 @@ jobs:
         # by the Flutter gradle plugin; --target-platform is the working knob.
         run: flutter build apk --release --target-platform android-arm64
 
-      - name: Rename APK
-        run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/pyx-wallet.apk
+      - name: Name APK after the commit
+        run: |
+          echo "SHORT_SHA=${GITHUB_SHA::9}" >> "$GITHUB_ENV"
+          mv build/app/outputs/flutter-apk/app-release.apk \
+             "build/app/outputs/flutter-apk/pyx-wallet-${GITHUB_SHA::9}.apk"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pyx-wallet-apk
-          path: build/app/outputs/flutter-apk/pyx-wallet.apk
+          name: pyx-wallet-apk-${{ env.SHORT_SHA }}
+          path: build/app/outputs/flutter-apk/pyx-wallet-*.apk
 
-      - name: Update rolling release
+      # One release per build, named after the commit. GitHub's
+      # /releases/latest link always points at the newest one.
+      - name: Create build release
         uses: ncipollo/release-action@v1
         with:
-          tag: latest
-          name: 'Pyx Wallet (latest)'
+          tag: build-${{ env.SHORT_SHA }}
+          commit: ${{ github.sha }}
+          name: 'Pyx Wallet ${{ env.SHORT_SHA }}'
           body: |
-            Rolling build of the `main` branch — signed, arm64.
-            Download `pyx-wallet.apk` below and open it on your phone to
-            install/update (same signing key every build, so updates
-            install over the previous version).
-          artifacts: 'build/app/outputs/flutter-apk/pyx-wallet.apk'
-          allowUpdates: true
-          replacesArtifacts: true
+            Signed arm64 build of ${{ github.sha }}.
+
+            ${{ github.event.head_commit.message }}
+
+            Download the APK below and open it on your phone to
+            install/update — every build is signed with the same key, so
+            it installs over the previous version.
+          artifacts: 'build/app/outputs/flutter-apk/pyx-wallet-*.apk'
           draft: false
           prerelease: false
         env:
