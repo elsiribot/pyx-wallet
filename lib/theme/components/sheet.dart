@@ -21,6 +21,9 @@ Future<T?> showPyxSheet<T>(
     ),
     builder: (context) => Container(
       width: double.infinity,
+      // viewInsets covers the keyboard; the system navigation bar is a
+      // viewPadding inset and modal sheets sit outside the screens'
+      // SafeArea, so it must be handled here.
       padding: EdgeInsets.only(
         left: Gaps.screenH,
         right: Gaps.screenH,
@@ -33,23 +36,26 @@ Future<T?> showPyxSheet<T>(
         borderRadius:
             BorderRadius.vertical(top: Radius.circular(Radii.sheet)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(top: 6, bottom: 14),
-              decoration: BoxDecoration(
-                color: Palette.borderStrong,
-                borderRadius: BorderRadius.circular(2),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(top: 6, bottom: 14),
+                decoration: BoxDecoration(
+                  color: Palette.borderStrong,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-          ),
-          Flexible(child: child),
-        ],
+            Flexible(child: child),
+          ],
+        ),
       ),
     ),
   );
