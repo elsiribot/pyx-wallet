@@ -70,6 +70,17 @@ wallet/network compatibility testing; it is deliberately outside a compatible
 lockfile refresh. The scan also reports 16 unmaintained, unsound, or yanked
 warnings. They remain visible for release triage and are not suppressed.
 
+A 2026-09-04 crates.io index review confirmed no published Fedimint release
+clears these paths: `fedimint-connectors` 0.11.2 and 0.12.0 both keep a
+mandatory, non-optional `iroh =0.35.0` pin (alongside the newer `iroh-next`
+0.90.0/1.0.3 line), and iroh 0.35.0/iroh-relay 0.35.0 require
+`hickory-resolver ^0.25.1` and `webpki ^0.102`, which are semver-incompatible
+with the fixed `hickory-resolver` 0.26.1 and `rustls-webpki` 0.103 releases.
+The six findings therefore remain open until upstream Fedimint drops or
+upgrades the legacy iroh 0.35 connector (or an accepted-risk decision is
+recorded by the release owner); neither a lockfile refresh nor a Fedimint
+0.11.2/0.12.0 bump can remediate them.
+
 Before cutover, the Rust gate must pass against a current database. Both scans
 must be rerun close to release; an offline dependency listing, cached PASS, or
 stale advisory result must not close either gate.

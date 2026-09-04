@@ -11,6 +11,8 @@ import androidx.lifecycle.ViewModelProvider
 import cash.pyx.app.ui.PyxApp
 import cash.pyx.app.ui.RootFailureScreen
 import cash.pyx.app.data.WalletBootstrapRepository
+import cash.pyx.app.data.WalletDataDirectory
+import java.io.File
 import cash.pyx.app.nativeapi.JniNativeWalletApi
 import cash.pyx.app.ui.WalletBootstrapViewModel
 import cash.pyx.app.ui.theme.PyxTheme
@@ -40,7 +42,10 @@ class MainActivity : FragmentActivity() {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
                 WalletBootstrapViewModel(
-                    WalletBootstrapRepository(JniNativeWalletApi(), filesDir.absolutePath),
+                    WalletBootstrapRepository(
+                        JniNativeWalletApi(),
+                        WalletDataDirectory.resolve(filesDir, File(dataDir, "app_flutter")).absolutePath,
+                    ),
                     seedBackupState = DataStoreSeedBackupState(applicationContext),
                     operationReconciliation = IrreversibleOperationReconciliation(
                         SharedPreferencesIrreversibleOperationJournal(applicationContext),

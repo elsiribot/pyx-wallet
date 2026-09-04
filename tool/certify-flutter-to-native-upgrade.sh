@@ -123,7 +123,11 @@ STAGE="native replacement installation"
 # Replacement is used only here, preserving the Flutter-created app data.
 adb_device install -r "$NATIVE_APK" >/dev/null; report native_replacement_install PASS
 STAGE="post-upgrade manual verification"
-adb_device shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1 >/dev/null
+# monkey cannot launch activities on some redroid images; resolve the real
+# launcher component and start it deterministically instead.
+LAUNCH_COMPONENT="$(adb_device shell cmd package resolve-activity --brief "$PACKAGE" | tr -d '\r' | tail -1)"
+[[ "$LAUNCH_COMPONENT" == "$PACKAGE"/* ]] || { echo "Cannot resolve launcher activity for $PACKAGE." >&2; exit 1; }
+adb_device shell am start -n "$LAUNCH_COMPONENT" >/dev/null
 echo "Compare the same redacted assertions and verify wallet/payment/recovery behavior." >&2
 read -r -p "Type NATIVE-CHECKPOINT-MATCHED only if every required assertion matches: " POST_CONFIRM
 [[ "$POST_CONFIRM" == "NATIVE-CHECKPOINT-MATCHED" ]] || { echo "Checkpoint not confirmed; app/data left untouched." >&2; exit 1; }

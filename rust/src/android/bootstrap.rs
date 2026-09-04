@@ -76,9 +76,14 @@ pub(crate) fn take_current() -> Result<Option<BootstrapResult>, AndroidError> {
         .map(|mut state| state.take())
 }
 
-/// Opens exactly the database used by Flutter (`filesDir/client.db`) and checks
-/// for its existing root entropy. The mutex prevents concurrent RocksDB opens
-/// and also makes repeated Activity/repository bootstrap calls idempotent.
+/// Opens `<dir>/client.db` in the directory the caller resolved and checks for
+/// its existing root entropy. The Kotlin side is responsible for passing the
+/// directory that actually holds the wallet: Flutter created it under the
+/// path_provider documents directory (`<dataDir>/app_flutter` on Android), so
+/// upgraded installs must pass that legacy directory while fresh native
+/// installs pass `filesDir` (see `WalletDataDirectory.resolve`). The mutex
+/// prevents concurrent RocksDB opens and also makes repeated
+/// Activity/repository bootstrap calls idempotent.
 pub(crate) async fn run_async(files_dir: String) -> Result<BootstrapResult, AndroidError> {
     validate_files_dir(&files_dir)?;
     let _operation = lock_operation().await;

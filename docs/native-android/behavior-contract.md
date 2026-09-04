@@ -4,7 +4,7 @@ This freezes observable behavior before the native Android port. Flutter remains
 
 ## Startup and persisted state
 
-- The app opens `<application documents>/client.db` through `open_database`. On Android this is the app's files directory; the native app must pass that directory, not a new database path.
+- The app opens `<application documents>/client.db` through `open_database`. On Android, path_provider's application documents directory is `<dataDir>/app_flutter` — NOT the app's `files` directory. (This line originally recorded `files`; a 2026-09-04 install-over-Flutter run on redroid proved the wallet actually lives under `app_flutter/client.db` and the wrong recording made the native app present an existing wallet as uninitialized.) The native app resolves the directory through `WalletDataDirectory.resolve`: it opens the legacy `app_flutter/client.db` whenever that RocksDB directory exists and uses `filesDir` only for installs with no legacy wallet. The wallet database is never copied, moved, or rewritten.
 - If `ConduitClientFactory.try_load` finds root entropy, startup enters `BaseScreen`; otherwise it enters `LandingScreen`. Never infer initialization only from file existence.
 - Root entropy, federation configs and databases, selected fiat currency (default `USD`), contacts, operation fiat snapshots, and the copied event log live in RocksDB. No Flutter `SharedPreferences` keys are used by current Dart code.
 - One selected `ConduitClient` is loaded at a time. Switching/leave/recovery shuts down the old client and starts subscriptions for the new one.

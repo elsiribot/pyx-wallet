@@ -92,6 +92,29 @@ plain PSS comparison or an unanalyzed heap dump is not accepted as a substitute.
   physical arm64 loading, or the full hardware accessibility/security and
   API-level matrix
 
+### Android 13 x86_64 redroid preview — PASS
+
+- Report: `build/device-certification/20260904T103402Z.txt`; preserved JUnit XML
+  and inventory: `build/device-certification/20260904T103402Z-reports/`
+- Run: 2026-09-04 10:34:02–10:42:19 UTC
+- Target: redroid `redroid13_x86_64` container (the intended local x86_64 lane
+  environment), API 33, primary/tested ABI `x86_64`
+- Package: `cash.pyx.app.nativepreview`; production `cash.pyx.app` was present
+  on the container and recorded untouched — the certifier installs and tests
+  only the suffixed preview identity
+- Native runtime: packaged `lib/x86_64/libpyx.so` and matching NDK
+  `libc++_shared.so` loaded through real JNI (`NativeJniSmokeTest`)
+- Result: 50 tests, 0 failures, 0 errors, 0 skipped; inventory SHA-256
+  `78b093dbad5946e08bbf7d0f6f3a19ed0f344f19d0a2c664afa6eaa34c00d363`, JUnit XML
+  SHA-256 `6bf9fec6196c888828602a89f991e7007518041735066a01146082e6bec9a196`
+- This satisfies the "supported x86_64 lane must run on its intended
+  redroid/emulator environment" matrix requirement on redroid specifically, at
+  API 33 in addition to the earlier API 34 emulator run
+- Not covered: production signing or install-over-Flutter, persisted production
+  wallet compatibility, live federation/client streams, live-operation process
+  death, physical arm64 loading, or the full hardware accessibility/security
+  and API-level matrix
+
 ### Android 14 x86_64 isolated R8/JNI — PASS
 
 - Runner: `tool/certify-native-android-r8-headless.sh`
@@ -208,12 +231,51 @@ history. Logs and screenshots must redact wallet payloads.
 
 `tool/certify-flutter-to-native-upgrade.sh` is the explicit local runner for
 this matrix row. It is intentionally separate from the canonical preview
-workflow and has not been run without the archived Flutter fixture. Its
-timestamped `build/upgrade-certification/` report proves artifact, package,
-signature, and install-sequencing checks. There is no production non-secret
-checkpoint hook, so the report preserves fixed-word operator confirmations for
-the before/after behavioral assertions and must be reviewed with separately
-stored redacted captures; it does not by itself prove wallet-state equality.
+workflow. Its timestamped `build/upgrade-certification/` report proves
+artifact, package, signature, and install-sequencing checks. There is no
+production non-secret checkpoint hook, so the report preserves fixed-word
+operator confirmations for the before/after behavioral assertions and must be
+reviewed with separately stored redacted captures; it does not by itself prove
+wallet-state equality.
+
+### Android 13 x86_64 redroid install-over-Flutter — first FAIL found a P0 bug; re-run PASS (2026-09-04)
+
+- Reports: `build/upgrade-certification/20260904T105259Z.txt` (FAIL) and
+  `build/upgrade-certification/20260904T110857Z.txt` (PASS), each with a
+  `-captures/` directory holding the redacted screenshots and the operator
+  checkpoint record
+- Target: clean redroid `pyx-upgrade` container, Android 13 x86_64,
+  `cash.pyx.app` absent before the run; both APKs production-signed
+  (signer SHA-256 `147AC9D0…B45A8537`), versionCode 38, x86_64 included for
+  the redroid lane only
+- Fixture: fresh synthetic wallet generated in the Flutter release app; default
+  currency changed to Swiss Franc; joined the public "Liberty Tree Network"
+  federation by `fedimint:` deep link; balance 0 sats; no contacts; empty
+  history; seed words never captured
+- FAIL run finding (P0): the pre-fix native app opened `filesDir/client.db`
+  while Flutter's wallet actually lives at `<dataDir>/app_flutter/client.db`
+  (path_provider documents directory) — the upgraded install presented an
+  existing wallet as fresh onboarding. The frozen contract's "files directory"
+  recording was wrong; every prior fixture test used the native path and could
+  not catch this.
+- Fix: `WalletDataDirectory.resolve` (Kotlin) opens the legacy
+  `app_flutter/client.db` RocksDB directory whenever it exists and uses
+  `filesDir` only when there is no legacy wallet; the database is never copied,
+  moved, or rewritten. Unit tests cover legacy-present, legacy-absent,
+  both-present (legacy wins over a stray uninitialized native DB), and
+  plain-file `client.db` rejection. `behavior-contract.md` and the rust
+  bootstrap documentation were corrected.
+- PASS run: install-over preserved identity (no onboarding), the joined and
+  selected federation (native app connected live: "4 of 4 guardians online"),
+  0 sats balance, CHF currency, empty contacts and history; data was never
+  cleared or uninstalled.
+- Incidental: the known upstream x86_64 SIGSEGV (null deref,
+  `tokio-runtime-w`) recurred in the retained Flutter/FRB lane during the
+  deep-link join; the join state had already persisted and the wallet was
+  intact on relaunch. Native-lane recurrence has not been observed.
+- Scope limit: this is a synthetic-fixture x86_64 emulator-container row of the
+  matrix. Physical arm64 hardware, Android 8/12 API rows, funded balances, and
+  payment-history-bearing upgrades remain open.
 
 ## Manual platform evidence
 
