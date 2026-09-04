@@ -1,6 +1,7 @@
+#[cfg(feature = "flutter-bridge")]
 use flutter_rust_bridge::frb;
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct FiatCurrency {
     pub code: String,
     pub name: String,
@@ -8,7 +9,7 @@ pub struct FiatCurrency {
     pub decimal_digits: i32,
 }
 
-#[frb(sync)]
+#[cfg_attr(feature = "flutter-bridge", frb(sync))]
 pub fn list_fiat_currencies() -> Vec<FiatCurrency> {
     CURRENCIES
         .iter()
@@ -21,7 +22,7 @@ pub fn list_fiat_currencies() -> Vec<FiatCurrency> {
         .collect()
 }
 
-#[frb(sync)]
+#[cfg_attr(feature = "flutter-bridge", frb(sync))]
 pub fn find_fiat_currency(code: &str) -> Option<FiatCurrency> {
     CURRENCIES.iter().find(|&&(c, _, _, _)| c == code).map(
         |&(code, name, symbol, decimal_digits)| FiatCurrency {

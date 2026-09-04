@@ -28,17 +28,18 @@ use fedimint_mintv2_common::KIND as MINTV2_KIND;
 use fedimint_wallet_client::{KIND as WALLET_KIND, WalletClientInit};
 use fedimint_walletv2_client::WalletClientInit as WalletV2ClientInit;
 use fedimint_walletv2_common::KIND as WALLETV2_KIND;
+#[cfg(feature = "flutter-bridge")]
 use flutter_rust_bridge::frb;
 use futures_util::StreamExt;
 use tokio::sync::Mutex;
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct ConduitClientFactory {
     db: Database,
     mnemonic: fedimint_bip39::Mnemonic,
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct FederationInfo {
     pub id: FederationId,
     pub name: String,
@@ -63,7 +64,7 @@ impl FederationInfo {
     }
 }
 
-#[frb(opaque)]
+#[cfg_attr(feature = "flutter-bridge", frb(opaque))]
 pub struct ConduitContact {
     lnurl: LnurlWrapper,
     name: String,
@@ -74,17 +75,17 @@ fn contains(haystack: &str, needle: &str) -> bool {
 }
 
 impl ConduitContact {
-    #[frb(sync, getter)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync, getter))]
     pub fn name(&self) -> String {
         self.name.clone()
     }
 
-    #[frb(sync, getter)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync, getter))]
     pub fn lnurl(&self) -> LnurlWrapper {
         LnurlWrapper(self.lnurl.0.clone())
     }
 
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn match_query(&self, query: &str) -> bool {
         contains(&self.name, query) || contains(&self.lnurl.0, query)
     }
@@ -122,7 +123,7 @@ fn ensure_any(config: &ClientConfig, kinds: &[&ModuleKind]) -> Result<(), String
 }
 
 impl ConduitClientFactory {
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn init(db: &DatabaseWrapper, mnemonic: &MnemonicWrapper) -> Result<Self, String> {
         let mut dbtx = db.0.begin_transaction().await;
 
@@ -137,7 +138,7 @@ impl ConduitClientFactory {
         })
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn try_load(db: &DatabaseWrapper) -> Option<Self> {
         db.0.begin_transaction_nc()
             .await
@@ -150,7 +151,7 @@ impl ConduitClientFactory {
             })
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn seed_phrase(&self) -> Vec<String> {
         self.mnemonic.words().map(|s| s.to_string()).collect()
     }
@@ -203,7 +204,7 @@ impl ConduitClientFactory {
             .expect("Failed to bind connector registry")
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn join(&self, invite: &InviteCodeWrapper) -> Result<ConduitClient, String> {
         if let Some(client) = self.load(&invite.0.federation_id()).await {
             return Ok(client);
@@ -216,9 +217,9 @@ impl ConduitClientFactory {
             .await
             .map_err(|e| e.to_string())?;
 
-        ensure_any(&preview.config(), &[&LNV1_KIND, &LIGHTNING_KIND])?;
-        ensure_one_of(&preview.config(), &MINT_KIND, &MINTV2_KIND)?;
-        ensure_one_of(&preview.config(), &WALLET_KIND, &WALLETV2_KIND)?;
+        ensure_any(preview.config(), &[&LNV1_KIND, &LIGHTNING_KIND])?;
+        ensure_one_of(preview.config(), &MINT_KIND, &MINTV2_KIND)?;
+        ensure_one_of(preview.config(), &WALLET_KIND, &WALLETV2_KIND)?;
 
         let federation_id = invite.0.federation_id();
 
@@ -232,7 +233,7 @@ impl ConduitClientFactory {
         Ok(self.create_client(Arc::new(client), federation_id).await)
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn recover(&self, invite: &InviteCodeWrapper) -> Result<ConduitClient, String> {
         if let Some(client) = self.load(&invite.0.federation_id()).await {
             return Ok(client);
@@ -245,9 +246,9 @@ impl ConduitClientFactory {
             .await
             .map_err(|e| e.to_string())?;
 
-        ensure_any(&preview.config(), &[&LNV1_KIND, &LIGHTNING_KIND])?;
-        ensure_one_of(&preview.config(), &MINT_KIND, &MINTV2_KIND)?;
-        ensure_one_of(&preview.config(), &WALLET_KIND, &WALLETV2_KIND)?;
+        ensure_any(preview.config(), &[&LNV1_KIND, &LIGHTNING_KIND])?;
+        ensure_one_of(preview.config(), &MINT_KIND, &MINTV2_KIND)?;
+        ensure_one_of(preview.config(), &WALLET_KIND, &WALLETV2_KIND)?;
 
         let federation_id = invite.0.federation_id();
 
@@ -265,7 +266,7 @@ impl ConduitClientFactory {
         Ok(self.create_client(Arc::new(client), federation_id).await)
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn load(&self, federation_id: &FederationId) -> Option<ConduitClient> {
         if !Client::is_initialized(&self.client_database(*federation_id)).await {
             return None;
@@ -318,7 +319,7 @@ impl ConduitClientFactory {
         }
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn list_federations(&self) -> Vec<FederationInfo> {
         self.db
             .begin_transaction_nc()
@@ -330,7 +331,7 @@ impl ConduitClientFactory {
             .await
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn set_currency(&self, currency_code: &str) {
         let mut dbtx = self.db.begin_transaction().await;
 
@@ -340,7 +341,7 @@ impl ConduitClientFactory {
         dbtx.commit_tx().await;
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn get_currency(&self) -> String {
         self.db
             .begin_transaction_nc()
@@ -350,7 +351,7 @@ impl ConduitClientFactory {
             .unwrap_or_else(|| "USD".to_string())
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn leave(&self, federation_id: &FederationId) {
         let mut dbtx = self.db.begin_transaction().await;
 
@@ -366,7 +367,7 @@ impl ConduitClientFactory {
         dbtx.commit_tx().await;
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn save_contact(&self, lnurl: &LnurlWrapper, name: &str) {
         let mut dbtx = self.db.begin_transaction().await;
 
@@ -376,7 +377,7 @@ impl ConduitClientFactory {
         dbtx.commit_tx().await;
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn get_contact_name(&self, lnurl: &LnurlWrapper) -> Option<String> {
         self.db
             .begin_transaction_nc()
@@ -385,7 +386,7 @@ impl ConduitClientFactory {
             .await
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn list_contacts(&self) -> Vec<ConduitContact> {
         let mut contacts: Vec<_> = self
             .db
@@ -405,7 +406,7 @@ impl ConduitClientFactory {
         contacts
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn delete_contact(&self, lnurl: &LnurlWrapper) {
         let mut dbtx = self.db.begin_transaction().await;
 

@@ -1,0 +1,66 @@
+{
+  "activity.paymentDetails": {
+    "payment": {
+      "operationId": "operation",
+      "incoming": true,
+      "type": "ecash",
+      "amountSat": 42,
+      "feeSat": 1,
+      "timestampMillis": 123,
+      "status": "succeeded",
+      "ecash": "cash\"\nvalue",
+      "txid": "txid",
+      "address": "address",
+      "preimage": "preimage",
+      "fiatAmount": "1.25",
+      "fiatCurrencyCode": "USD"
+    }
+  },
+  "catalog.addresses": { "addresses": [{ "tweakIndex": 7, "address": "bc1example" }] },
+  "catalog.currencies": {
+    "currencies": [{ "code": "USD", "name": "United States Dollar", "symbol": "$", "decimalDigits": 2 }]
+  },
+  "input.bitcoinPayment": {
+    "address": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+    "amountSat": 1,
+    "label": "Alice",
+    "message": null,
+    "isUri": true
+  },
+  "input.classificationUnknown": { "type": "unknown" },
+  "metadata.connectionStatus": {
+    "guardians": [{ "name": "Guardian", "connected": false }],
+    "onlineCount": 0,
+    "totalCount": 1,
+    "requiredCount": 1,
+    "state": "offline"
+  },
+  "metadata.contacts": { "contacts": [{ "name": "Alice", "lnurl": "LNURL1EXAMPLE" }] },
+  "recovery.expiry": {
+    "hasPendingRecoveries": true,
+    "expiresAtEpochSeconds": 1800000000,
+    "successorInvitePresent": true,
+    "successorInvite": "fedimint:successor"
+  },
+  "subscriptions.balance": { "balanceSat": 42 },
+  "wallet.homePayment": {
+    "operationId": "operation",
+    "incoming": false,
+    "type": "lightning",
+    "amountSat": 42,
+    "feeSat": 1,
+    "timestampMillis": 123,
+    "status": "succeeded"
+  },
+  "wallet.selectedSnapshot": {
+    "currencyCode": "USD",
+    "federations": [{ "id": "abcd", "name": "Community", "guardianCount": 3 }],
+    "selected": {
+      "federationId": "abcd",
+      "name": "Community",
+      "balanceSat": 5,
+      "clientHandle": 7,
+      "payments": []
+    }
+  }
+}

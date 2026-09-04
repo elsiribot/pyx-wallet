@@ -1,0 +1,110 @@
+name: Native Android preview checks
+
+on:
+  pull_request:
+    paths:
+      - 'android-native/**'
+      - 'rust/**'
+      - 'tool/build-native-android.sh'
+      - 'tool/audit-native-dependencies.sh'
+      - 'tool/review-native-android-security.sh'
+      - 'tool/test-native-android-connected.sh'
+      - 'docs/native-android/**'
+      - '.github/workflows/android-native-preview.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'android-native/**'
+      - 'rust/**'
+      - 'tool/build-native-android.sh'
+      - 'tool/audit-native-dependencies.sh'
+      - 'tool/review-native-android-security.sh'
+      - 'docs/native-android/**'
+      - '.github/workflows/android-native-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-and-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Install Android SDK and NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-36' \
+            'build-tools;35.0.0' \
+            'ndk;28.2.13676358'
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+          components: rustfmt, clippy
+
+      - name: Install cargo-ndk
+        run: command -v cargo-ndk || cargo install cargo-ndk --locked --version 4.1.2
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+
+      - name: Lint native Rust graph
+        run: >-
+          cargo clippy --locked --manifest-path rust/Cargo.toml
+          --no-default-features --features android-jni --all-targets -- -D warnings
+
+      - name: Test Rust JNI core
+        run: >-
+          cargo test --locked --manifest-path rust/Cargo.toml
+          --no-default-features --features android-jni
+
+      # Keep the retained Flutter bridge graph buildable as the migration's
+      # behavior oracle. This is a host Rust test, not a Flutter release build.
+      - name: Test retained Flutter bridge Rust graph
+        run: cargo test --locked --manifest-path rust/Cargo.toml
+
+      - name: Review source security invariants
+        run: tool/review-native-android-security.sh
+
+      - name: Verify locked dependency inventory
+        run: tool/audit-native-dependencies.sh
+
+      # The build helper runs :app:testDebugUnitTest, :app:lintDebug and
+      # :app:assembleDebug, then inspects the resulting APK and native ABIs.
+      # STRICT Gradle dependency locking makes resolution fail on lock drift.
+      - name: Unit test, lint, assemble and certify native preview
+        run: tool/build-native-android.sh --debug
+
+      - name: Upload preview and reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-android-preview-${{ github.sha }}
+          if-no-files-found: warn
+          path: |
+            android-native/app/build/outputs/apk/debug/app-debug.apk
+            android-native/app/build/reports/tests/
+            android-native/app/build/reports/lint-results-debug.html
+            build/dependency-audit/

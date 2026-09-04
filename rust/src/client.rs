@@ -15,6 +15,7 @@ use fedimint_mintv2_client::MintClientModule as MintV2ClientModule;
 use fedimint_wallet_client::client_db::TweakIdx;
 use fedimint_wallet_client::{WalletClientModule, WalletOperationMeta, WalletOperationMetaVariant};
 use fedimint_walletv2_client::WalletClientModule as WalletV2ClientModule;
+#[cfg(feature = "flutter-bridge")]
 use flutter_rust_bridge::frb;
 use futures_util::StreamExt;
 
@@ -26,26 +27,33 @@ use crate::events::{
     parse_event_log_entry, snapshot,
 };
 use crate::exchange::{EXCHANGE_RATE_TTL, ExchangeRateCache, fetch_exchange_rate};
+#[cfg(feature = "flutter-bridge")]
 use crate::frb_generated::StreamSink;
 use crate::{
     BitcoinAddressWrapper, Bolt11InvoiceWrapper, ECashWrapper, EcashToken, InviteCodeWrapper,
 };
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct ConduitRecoveryProgress {
     pub module_id: i64,
     pub complete: i64,
     pub total: i64,
 }
 
-#[frb]
+pub(crate) struct RecoveryExpirySnapshot {
+    pub(crate) has_pending_recoveries: bool,
+    pub(crate) expires_at_epoch_seconds: Option<i64>,
+    pub(crate) successor_invite: Option<String>,
+}
+
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct FederationStats {
     pub total_value_sat: i64,
     pub block_count: i64,
     pub feerate: Option<i64>,
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct LnSendFees {
     pub gateway_url: String,
     pub fee_sats: i64,
@@ -55,7 +63,7 @@ pub struct LnSendFees {
     pub is_direct: bool,
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct LnReceiveInvoice {
     pub invoice: String,
     pub gateway_url: String,
@@ -94,7 +102,7 @@ async fn select_lnv1_gateway(
         .ok_or_else(|| "No gateways available".to_string())
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 #[derive(Clone)]
 pub struct ConduitClient {
     pub(crate) client: ClientHandleArc,
@@ -105,7 +113,128 @@ pub struct ConduitClient {
 }
 
 impl ConduitClient {
-    #[frb]
+    pub(crate) async fn balance_updates(
+        &self,
+    ) -> impl futures_util::Stream<Item = i64> + Send + 'static {
+        self.client
+            .subscribe_balance_changes(AmountUnit::bitcoin())
+            .await
+            .map(|amount| (amount.msats / 1000) as i64)
+    }
+
+    pub(crate) async fn connection_updates(
+        &self,
+    ) -> Option<impl futures_util::Stream<Item = Vec<(String, bool)>> + Send + '_> {
+        let config = self.client.config().await;
+        let guardians = config
+            .global
+            .api_endpoints
+            .iter()
+            .map(|(peer_id, peer)| (*peer_id, peer.name.clone()))
+            .collect::<Vec<_>>();
+        if guardians.is_empty() {
+            return None;
+        }
+        Some(self.client.connection_status_stream().map(move |statuses| {
+            guardians
+                .iter()
+                .map(|(peer_id, name)| {
+                    (
+                        name.clone(),
+                        statuses.get(peer_id).copied().unwrap_or(false),
+                    )
+                })
+                .collect()
+        }))
+    }
+
+    pub(crate) fn recovery_updates(
+        &self,
+    ) -> impl futures_util::Stream<Item = (u64, u64, u64)> + Send + '_ {
+        self.client
+            .subscribe_to_recovery_progress()
+            .map(|(module_id, progress)| {
+                (
+                    module_id as u64,
+                    progress.complete as u64,
+                    progress.total as u64,
+                )
+            })
+    }
+
+    pub(crate) async fn recovery_expiry_snapshot(&self) -> RecoveryExpirySnapshot {
+        let expires_at_epoch_seconds = self
+            .client
+            .meta_service()
+            .get_field::<u64>(self.client.db(), "federation_expiry_timestamp")
+            .await
+            .and_then(|value| value.value)
+            .and_then(|value| i64::try_from(value).ok());
+        let successor_invite = self
+            .client
+            .meta_service()
+            .get_field::<String>(self.client.db(), "federation_successor")
+            .await
+            .and_then(|value| value.value)
+            .and_then(|value| fedimint_core::invite_code::InviteCode::from_str(&value).ok())
+            .map(|invite| invite.to_string());
+        RecoveryExpirySnapshot {
+            has_pending_recoveries: self.client.has_pending_recoveries(),
+            expires_at_epoch_seconds,
+            successor_invite,
+        }
+    }
+
+    /// Bridge-neutral initial balance read used by native snapshots. Streaming
+    /// adapters build on the same Fedimint subscription separately.
+    pub(crate) async fn balance_snapshot(&self) -> Option<i64> {
+        let mut balances = self
+            .client
+            .subscribe_balance_changes(AmountUnit::bitcoin())
+            .await;
+        tokio::time::timeout(std::time::Duration::from_secs(5), balances.next())
+            .await
+            .ok()
+            .flatten()
+            .map(|amount| (amount.msats / 1000) as i64)
+    }
+
+    /// One bounded connection snapshot for native read models. Guardian names
+    /// come from the signed federation config and remain available when the
+    /// live status stream times out.
+    pub(crate) async fn connection_status_snapshot(&self) -> Option<Vec<(String, bool)>> {
+        let config = self.client.config().await;
+        let guardians = config
+            .global
+            .api_endpoints
+            .iter()
+            .map(|(peer_id, peer)| (*peer_id, peer.name.clone()))
+            .collect::<Vec<_>>();
+        if guardians.is_empty() {
+            return None;
+        }
+
+        let mut stream = self.client.connection_status_stream();
+        let statuses = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
+            .await
+            .ok()
+            .flatten();
+        Some(
+            guardians
+                .into_iter()
+                .map(|(peer_id, name)| {
+                    let connected = statuses
+                        .as_ref()
+                        .and_then(|status| status.get(&peer_id))
+                        .copied()
+                        .unwrap_or(false);
+                    (name, connected)
+                })
+                .collect(),
+        )
+    }
+
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn federation_name(&self) -> Option<String> {
         self.client
             .config()
@@ -115,17 +244,17 @@ impl ConduitClient {
             .map(|name| name.to_string())
     }
 
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn federation_id(&self) -> FederationId {
         self.federation_id
     }
 
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn currency_code(&self) -> String {
         self.currency_code.clone()
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn shutdown(&self) {
         self.client.executor().stop_executor();
         self.client
@@ -140,13 +269,13 @@ impl ConduitClient {
     /// convert without a network round trip. Awaits the fetch so callers can
     /// rebuild once a rate is on hand; errors are ignored since this is only a
     /// best-effort prefetch.
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn prefetch_exchange_rates(&self) {
-        let _ = fetch_exchange_rate(self.exchange_rate_cache.clone(), self.currency_code.clone())
-            .await;
+        let _ =
+            fetch_exchange_rate(self.exchange_rate_cache.clone(), self.currency_code.clone()).await;
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn fiat_to_sats(&self, amount_fiat: f64) -> Result<i64, String> {
         fetch_exchange_rate(self.exchange_rate_cache.clone(), self.currency_code.clone())
             .await
@@ -157,13 +286,14 @@ impl ConduitClient {
     /// exchange rate, without triggering a network fetch. Returns `None` when
     /// no fresh rate has been cached yet (or the cache is momentarily locked) so
     /// callers can show fiat opportunistically without blocking on the network.
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn sats_to_fiat(&self, amount_sats: i64) -> Option<f64> {
         let guard = self.exchange_rate_cache.try_lock().ok()?;
-        if let Some((rate, timestamp)) = guard.as_ref() {
-            if timestamp.elapsed() < EXCHANGE_RATE_TTL {
-                return Some((amount_sats as f64 / 100_000_000.0) * rate);
-            }
+        if let Some((rate, _)) = guard
+            .as_ref()
+            .filter(|(_, timestamp)| timestamp.elapsed() < EXCHANGE_RATE_TTL)
+        {
+            return Some((amount_sats as f64 / 100_000_000.0) * rate);
         }
         None
     }
@@ -188,7 +318,11 @@ impl ConduitClient {
 
         let mut dbtx = self.db.begin_transaction().await;
 
-        if dbtx.get_value(&OperationFiatKey(operation_id)).await.is_none() {
+        if dbtx
+            .get_value(&OperationFiatKey(operation_id))
+            .await
+            .is_none()
+        {
             dbtx.insert_entry(
                 &OperationFiatKey(operation_id),
                 &(self.currency_code.clone(), rate.to_be_bytes()),
@@ -219,7 +353,8 @@ impl ConduitClient {
         payment.fiat_currency_code = Some(currency_code);
     }
 
-    #[frb]
+    #[cfg(feature = "flutter-bridge")]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn subscribe_balance(&self, sink: StreamSink<i64>) {
         let mut stream = self
             .client
@@ -233,7 +368,8 @@ impl ConduitClient {
         }
     }
 
-    #[frb]
+    #[cfg(feature = "flutter-bridge")]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn subscribe_connection_status(&self, sink: StreamSink<Vec<(String, bool)>>) {
         let names: Vec<String> = self
             .client
@@ -260,12 +396,12 @@ impl ConduitClient {
         }
     }
 
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn has_pending_recoveries(&self) -> bool {
         self.client.has_pending_recoveries()
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn expiration_date(&self) -> Option<i64> {
         self.client
             .meta_service()
@@ -275,7 +411,7 @@ impl ConduitClient {
             .map(|ts| ts as i64)
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn expiration_successor(&self) -> Option<InviteCodeWrapper> {
         self.client
             .meta_service()
@@ -286,7 +422,7 @@ impl ConduitClient {
             .map(InviteCodeWrapper)
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn wait_for_all_recoveries(&self) -> Result<(), String> {
         self.client
             .wait_for_all_recoveries()
@@ -294,7 +430,8 @@ impl ConduitClient {
             .map_err(|e| e.to_string())
     }
 
-    #[frb]
+    #[cfg(feature = "flutter-bridge")]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn subscribe_recovery_progress(&self, sink: StreamSink<ConduitRecoveryProgress>) {
         let mut stream = self.client.subscribe_to_recovery_progress();
 
@@ -311,45 +448,65 @@ impl ConduitClient {
         }
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn ecash_send(&self, amount_sat: i64) -> Result<ECashWrapper, String> {
+        self.ecash_send_with_meta(amount_sat, serde_json::Value::Null)
+            .await
+            .map(|(_, ecash)| ecash)
+    }
+
+    pub(crate) async fn ecash_send_with_meta(
+        &self,
+        amount_sat: i64,
+        meta: serde_json::Value,
+    ) -> Result<(Option<OperationId>, ECashWrapper), String> {
         let amount = Amount::from_sats(amount_sat as u64);
 
         if let Ok(module) = self.client.get_first_module::<MintV2ClientModule>() {
             return module
-                .send(amount, serde_json::Value::Null)
+                .send(amount, meta)
                 .await
-                .map(|ecash| ECashWrapper(EcashToken::V2(ecash)))
+                .map(|ecash| (None, ECashWrapper(EcashToken::V2(ecash))))
                 .map_err(|e| e.to_string());
         }
 
         self.client
             .get_first_module::<MintClientModule>()
             .unwrap()
-            .send_oob_notes(amount, ())
+            .send_oob_notes(amount, meta)
             .await
-            .map(|notes| ECashWrapper(EcashToken::V1(notes)))
+            .map(|notes| (None, ECashWrapper(EcashToken::V1(notes))))
             .map_err(|e| e.to_string())
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn ecash_receive(&self, notes: &ECashWrapper) -> Result<(), String> {
+        self.ecash_receive_with_meta(notes, serde_json::Value::Null)
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn ecash_receive_with_meta(
+        &self,
+        notes: &ECashWrapper,
+        meta: serde_json::Value,
+    ) -> Result<Option<OperationId>, String> {
         match &notes.0 {
             EcashToken::V2(ecash) => self
                 .client
                 .get_first_module::<MintV2ClientModule>()
                 .map_err(|e| e.to_string())?
-                .receive(ecash.clone(), serde_json::Value::Null)
+                .receive(ecash.clone(), meta)
                 .await
-                .map(|_| ())
+                .map(Some)
                 .map_err(|e| e.to_string()),
             EcashToken::V1(oob) => self
                 .client
                 .get_first_module::<MintClientModule>()
                 .map_err(|e| e.to_string())?
-                .reissue_external_notes(oob.clone(), ())
+                .reissue_external_notes(oob.clone(), meta)
                 .await
-                .map(|_| ())
+                .map(Some)
                 .map_err(|e| e.to_string()),
         }
     }
@@ -358,13 +515,15 @@ impl ConduitClient {
     /// front so the gateway and its (deducted) receive fee can be shown
     /// alongside the invoice; the same gateway is then used to mint it. The
     /// recipient receives `amount_sat` minus `fee_sats`.
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn ln_receive(&self, amount_sat: i64) -> Result<LnReceiveInvoice, String> {
         let amount = Amount::from_sats(amount_sat as u64);
 
         if let Ok(module) = self.client.get_first_module::<LightningClientModule>() {
-            let (gateway, routing_info) =
-                module.select_gateway(None).await.map_err(|e| e.to_string())?;
+            let (gateway, routing_info) = module
+                .select_gateway(None)
+                .await
+                .map_err(|e| e.to_string())?;
 
             let fee_sats = routing_info
                 .receive_fee
@@ -427,7 +586,7 @@ impl ConduitClient {
     /// fee for it, mirroring the selection [`Self::ln_send`] performs with
     /// `None`. Intended for display on the send confirmation screen; the actual
     /// fee charged is fixed when the payment is submitted.
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn ln_calculate_fees(
         &self,
         invoice: &Bolt11InvoiceWrapper,
@@ -449,8 +608,7 @@ impl ConduitClient {
 
             // A direct swap settles between fedimints when the invoice's payee is
             // the gateway's own lightning node; otherwise it routes over lightning.
-            let is_direct =
-                invoice.0.recover_payee_pub_key() == routing_info.lightning_public_key;
+            let is_direct = invoice.0.recover_payee_pub_key() == routing_info.lightning_public_key;
 
             return Ok(LnSendFees {
                 gateway_url: gateway.to_string(),
@@ -468,8 +626,8 @@ impl ConduitClient {
 
         let gateway = select_lnv1_gateway(&module, Some(invoice.0.clone())).await?;
 
-        let is_direct = invoice.0.recover_payee_pub_key().serialize()
-            == gateway.node_pub_key.serialize();
+        let is_direct =
+            invoice.0.recover_payee_pub_key().serialize() == gateway.node_pub_key.serialize();
 
         let fee_msats = if is_direct {
             0
@@ -489,11 +647,21 @@ impl ConduitClient {
     /// (as returned by [`Self::ln_calculate_fees`]) is used directly so the fee
     /// quoted on the confirmation screen matches what is charged; `None` lets
     /// the module auto-select.
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn ln_send(
         &self,
         invoice: &Bolt11InvoiceWrapper,
         gateway: Option<String>,
+    ) -> Result<OperationId, String> {
+        self.ln_send_with_meta(invoice, gateway, serde_json::Value::Null)
+            .await
+    }
+
+    pub(crate) async fn ln_send_with_meta(
+        &self,
+        invoice: &Bolt11InvoiceWrapper,
+        gateway: Option<String>,
+        meta: serde_json::Value,
     ) -> Result<OperationId, String> {
         if let Ok(module) = self.client.get_first_module::<LightningClientModule>() {
             let gateway = match gateway {
@@ -502,7 +670,7 @@ impl ConduitClient {
             };
 
             return module
-                .send(invoice.0.clone(), gateway, ().into())
+                .send(invoice.0.clone(), gateway, meta)
                 .await
                 .map_err(|e| e.to_string());
         }
@@ -530,14 +698,14 @@ impl ConduitClient {
         };
 
         let payment = module
-            .pay_bolt11_invoice(Some(gateway), invoice.0.clone(), ())
+            .pay_bolt11_invoice(Some(gateway), invoice.0.clone(), meta)
             .await
             .map_err(|e| e.to_string())?;
 
         Ok(payment.payment_type.operation_id())
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn lnurl(&self) -> Result<String, String> {
         if let Ok(module) = self.client.get_first_module::<LightningClientModule>() {
             // LNv2 lnurl requests are self-contained, so fedimint's hosted
@@ -593,13 +761,14 @@ impl ConduitClient {
             .map_err(|e| e.to_string())
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn onchain_calculate_fees(
         &self,
         address: &BitcoinAddressWrapper,
         amount_sats: i64,
     ) -> Result<i64, String> {
         if let Ok(module) = self.client.get_first_module::<WalletV2ClientModule>() {
+            require_address_network(address, module.get_network())?;
             return module
                 .send_fee()
                 .await
@@ -628,19 +797,30 @@ impl ConduitClient {
         Ok(fees.amount().to_sat() as i64)
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn onchain_send(
         &self,
         address: &BitcoinAddressWrapper,
         amount_sats: i64,
     ) -> Result<(), String> {
+        self.onchain_send_with_meta(address, amount_sats, serde_json::Value::Null)
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn onchain_send_with_meta(
+        &self,
+        address: &BitcoinAddressWrapper,
+        amount_sats: i64,
+        meta: serde_json::Value,
+    ) -> Result<OperationId, String> {
         let amount = bitcoin::Amount::from_sat(amount_sats as u64);
 
         if let Ok(module) = self.client.get_first_module::<WalletV2ClientModule>() {
+            require_address_network(address, module.get_network())?;
             return module
                 .send(address.0.clone(), amount, None)
                 .await
-                .map(|_| ())
                 .map_err(|e| e.to_string());
         }
 
@@ -661,13 +841,12 @@ impl ConduitClient {
             .map_err(|e| e.to_string())?;
 
         wallet_module
-            .withdraw(&address_checked, amount, fees, ())
+            .withdraw(&address_checked, amount, fees, meta)
             .await
-            .map(|_| ())
             .map_err(|e| e.to_string())
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn onchain_receive_address(&self) -> Result<String, String> {
         let wallet_module = self
             .client
@@ -682,7 +861,7 @@ impl ConduitClient {
         Ok(address.to_string())
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn onchain_list_addresses(&self) -> Vec<(i64, String)> {
         let operation_log = self.client.operation_log();
         let mut addresses = Vec::new();
@@ -716,13 +895,13 @@ impl ConduitClient {
                 }
             }
 
-            next_key = page.last().map(|entry| entry.0.clone());
+            next_key = page.last().map(|entry| entry.0);
         }
 
         addresses.into_iter().rev().collect()
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn onchain_recheck_address(&self, tweak_idx: i64) -> Result<(), String> {
         let wallet_module = self
             .client
@@ -737,7 +916,7 @@ impl ConduitClient {
         Ok(())
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn wallet_v2_receive(&self) -> Option<String> {
         let address = self
             .client
@@ -749,7 +928,7 @@ impl ConduitClient {
         Some(address.to_string())
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn federation_stats(&self) -> Option<FederationStats> {
         let module = self
             .client
@@ -763,7 +942,7 @@ impl ConduitClient {
         })
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn get_payment_history(&self) -> Vec<ConduitPayment> {
         let mut payments = Vec::new();
 
@@ -792,13 +971,7 @@ impl ConduitClient {
                         txid,
                         preimage,
                     } => {
-                        apply_update(
-                            &mut payments,
-                            &operation_id,
-                            success,
-                            txid,
-                            preimage,
-                        );
+                        apply_update(&mut payments, &operation_id, success, txid, preimage);
                     }
                 }
             }
@@ -809,7 +982,87 @@ impl ConduitClient {
         payments
     }
 
-    #[frb]
+    pub(crate) fn event_updates(
+        &self,
+    ) -> impl futures_util::Stream<Item = RecentPaymentsUpdate> + Send + 'static {
+        let client = self.clone();
+        async_stream::stream! {
+            let mut position = EventLogId::LOG_START;
+            let mut payments = Vec::new();
+            let entries = client
+                .db
+                .begin_transaction_nc()
+                .await
+                .find_by_prefix(&EventLogEntryPrefix(client.federation_id))
+                .await
+                .collect::<Vec<_>>()
+                .await;
+            for (key, entry) in entries {
+                position = key.1.saturating_add(1);
+                if let Some(parsed) = parse_event_log_entry(&entry) {
+                    match parsed {
+                        ParsedEvent::Payment { mut payment, operation_id } => {
+                            client.attach_fiat(&mut payment, operation_id).await;
+                            payments.push(payment);
+                        }
+                        ParsedEvent::Update { operation_id, success, txid, preimage } => {
+                            apply_update(&mut payments, &operation_id, success, txid, preimage);
+                        }
+                    }
+                }
+            }
+            yield RecentPaymentsUpdate {
+                payments: snapshot(&payments, payments.len()),
+                notification: None,
+            };
+
+            let mut log_event_rx = client.client.log_event_added_rx();
+            loop {
+                let changed = log_event_rx.changed();
+                let batch = client.client.get_event_log(Some(position), 100).await;
+                for persisted_entry in &batch {
+                    position = persisted_entry.id().saturating_add(1);
+                    let Some(parsed) = parse_event_log_entry(persisted_entry.as_raw()) else {
+                        continue;
+                    };
+                    let notification = match parsed {
+                        ParsedEvent::Payment { mut payment, operation_id } => {
+                            client.snapshot_fiat(operation_id).await;
+                            client.attach_fiat(&mut payment, operation_id).await;
+                            payments.push(payment.clone());
+                            payment.success.map(|success| PaymentNotification {
+                                incoming: payment.incoming,
+                                success,
+                                amount_sats: payment.amount_sats,
+                                payment_type: payment.payment_type.clone(),
+                            })
+                        }
+                        ParsedEvent::Update { operation_id, success, txid, preimage } => {
+                            apply_update(&mut payments, &operation_id, success, txid, preimage)
+                        }
+                    };
+                    yield RecentPaymentsUpdate {
+                        payments: snapshot(&payments, payments.len()),
+                        notification,
+                    };
+                    let mut dbtx = client.db.begin_transaction().await;
+                    dbtx.insert_entry(
+                        &EventLogEntryKey(client.federation_id, persisted_entry.id()),
+                        persisted_entry.as_raw(),
+                    ).await;
+                    if dbtx.commit_tx_result().await.is_err() {
+                        return;
+                    }
+                }
+                if batch.len() < 100 && changed.await.is_err() {
+                    return;
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "flutter-bridge")]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub async fn subscribe_event_log(&self, sink: StreamSink<RecentPaymentsUpdate>) {
         let mut position = EventLogId::LOG_START;
         let mut payments = Vec::new();
@@ -842,13 +1095,7 @@ impl ConduitClient {
                         txid,
                         preimage,
                     } => {
-                        apply_update(
-                            &mut payments,
-                            &operation_id,
-                            success,
-                            txid,
-                            preimage,
-                        );
+                        apply_update(&mut payments, &operation_id, success, txid, preimage);
                     }
                 }
             }
@@ -907,13 +1154,7 @@ impl ConduitClient {
                         success,
                         txid,
                         preimage,
-                    } => apply_update(
-                        &mut payments,
-                        &operation_id,
-                        success,
-                        txid,
-                        preimage,
-                    ),
+                    } => apply_update(&mut payments, &operation_id, success, txid, preimage),
                 };
 
                 if sink
@@ -945,5 +1186,37 @@ impl ConduitClient {
                 }
             }
         }
+    }
+}
+
+fn require_address_network(
+    address: &BitcoinAddressWrapper,
+    network: bitcoin::Network,
+) -> Result<(), String> {
+    address
+        .0
+        .clone()
+        .require_network(network)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod address_network_tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn wallet_v2_network_validation_rejects_cross_network_quotes() {
+        let mainnet = BitcoinAddressWrapper(
+            bitcoin::Address::from_str("1BoatSLRHtKNngkdXEeobR76b53LETtpyT").unwrap(),
+        );
+        let testnet = BitcoinAddressWrapper(
+            bitcoin::Address::from_str("mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn").unwrap(),
+        );
+        assert!(require_address_network(&mainnet, bitcoin::Network::Bitcoin).is_ok());
+        assert!(require_address_network(&mainnet, bitcoin::Network::Testnet).is_err());
+        assert!(require_address_network(&testnet, bitcoin::Network::Testnet).is_ok());
+        assert!(require_address_network(&testnet, bitcoin::Network::Bitcoin).is_err());
     }
 }

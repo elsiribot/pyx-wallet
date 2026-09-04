@@ -1,3 +1,4 @@
+use bitcoin::hex::DisplayHex;
 use fedimint_core::module::serde_json;
 use fedimint_eventlog::{Event, EventLogEntry};
 use fedimint_ln_client::events::SendPaymentStatus as LnV1SendPaymentStatus;
@@ -9,13 +10,13 @@ use fedimint_walletv2_client::events::{
     ReceivePaymentStatus as WalletV2ReceivePaymentStatus,
     SendPaymentStatus as WalletV2SendPaymentStatus,
 };
-use bitcoin::hex::DisplayHex;
+#[cfg(feature = "flutter-bridge")]
 use flutter_rust_bridge::frb;
 
 use crate::OperationId;
 
 /// Type of payment
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 #[derive(Clone)]
 pub enum PaymentType {
     Lightning,
@@ -24,7 +25,7 @@ pub enum PaymentType {
 }
 
 /// Payment with all updates folded in
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 #[derive(Clone)]
 pub struct ConduitPayment {
     pub operation_id: String,
@@ -46,7 +47,7 @@ pub struct ConduitPayment {
 }
 
 /// Notification for a recent payment event
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct PaymentNotification {
     pub incoming: bool,
     pub success: bool,
@@ -55,7 +56,7 @@ pub struct PaymentNotification {
 }
 
 /// Snapshot of recent payments plus an optional notification
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct RecentPaymentsUpdate {
     pub payments: Vec<ConduitPayment>,
     pub notification: Option<PaymentNotification>,

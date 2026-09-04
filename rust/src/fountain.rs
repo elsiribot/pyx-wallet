@@ -2,15 +2,16 @@ use fedimint_core::base32::{FEDIMINT_PREFIX, decode_prefixed, encode_prefixed};
 use fedimint_fountain::{FountainDecoder, FountainEncoder};
 use fedimint_mint_client::OOBNotes;
 use fedimint_mintv2_client::ECash;
+#[cfg(feature = "flutter-bridge")]
 use flutter_rust_bridge::frb;
 
 use crate::{ECashWrapper, EcashToken};
 
-#[frb(opaque)]
+#[cfg_attr(feature = "flutter-bridge", frb(opaque))]
 pub struct ECashEncoder(FountainEncoder);
 
 impl ECashEncoder {
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn new(notes: &ECashWrapper) -> Self {
         match &notes.0 {
             EcashToken::V1(oob) => Self(FountainEncoder::new(oob, 512)),
@@ -18,20 +19,26 @@ impl ECashEncoder {
         }
     }
 
-    #[frb]
+    #[cfg_attr(feature = "flutter-bridge", frb)]
     pub fn next_fragment(&mut self) -> String {
         encode_prefixed(FEDIMINT_PREFIX, &self.0.next_fragment())
     }
 }
 
-#[frb(opaque)]
+#[cfg_attr(feature = "flutter-bridge", frb(opaque))]
 pub struct ECashDecoder {
     v1: FountainDecoder<OOBNotes>,
     v2: FountainDecoder<ECash>,
 }
 
+impl Default for ECashDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ECashDecoder {
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn new() -> Self {
         Self {
             v1: FountainDecoder::default(),
@@ -39,7 +46,7 @@ impl ECashDecoder {
         }
     }
 
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn add_fragment(&mut self, fragment: &str) -> Option<ECashWrapper> {
         let fragment_bytes = decode_prefixed(FEDIMINT_PREFIX, fragment).ok()?;
 

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Explicit-only debug component: no launcher/deep-link intent filter and
+             absent from every release source set. Start with adb or instrumentation. -->
+        <activity
+            android:name=".debug.ComponentGalleryActivity"
+            android:exported="true"
+            android:label="Pyx component gallery" />
+        <activity
+            android:name=".debug.ScreenshotFixtureActivity"
+            android:exported="true"
+            android:label="Pyx synthetic screenshot fixture" />
+        <!-- Debug-preview-only hook driven by the offline process-death certifier. -->
+        <receiver
+            android:name=".debug.ProcessDeathProbeReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="cash.pyx.app.nativepreview.PROCESS_DEATH_PROBE" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

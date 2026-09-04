@@ -19,6 +19,9 @@ pub(crate) enum DbKeyPrefix {
     EventLogEntry = 0x06,
     Contact = 0x07,
     OperationFiat = 0x08,
+    /// Native Android irreversible-operation journal. Append-only prefix: old
+    /// wallets must keep decoding every prefix above unchanged.
+    PendingOperation = 0x09,
 }
 
 #[derive(Clone, Debug, Encodable, Decodable)]
@@ -106,3 +109,35 @@ impl_db_record!(
 );
 
 impl_db_lookup!(key = ContactKey, query_prefix = ContactPrefix);
+
+#[derive(Clone, Debug, Encodable, Decodable)]
+pub(crate) struct PendingOperationKey(pub(crate) [u8; 16]);
+
+#[derive(Clone, Debug, Encodable, Decodable)]
+pub(crate) struct PendingOperationPrefix;
+
+#[derive(Clone, Debug, Encodable, Decodable)]
+pub(crate) struct PendingOperationRecord {
+    pub(crate) version: u64,
+    pub(crate) federation_id: FederationId,
+    pub(crate) kind: u64,
+    pub(crate) created_at_ms: u64,
+    pub(crate) amount_sat: u64,
+    pub(crate) fee_sat: u64,
+    pub(crate) fingerprint: [u8; 32],
+    /// Newest operation at journal commit. A single cursor keeps the record
+    /// bounded regardless of wallet age.
+    pub(crate) baseline_payment_operation_id: Option<[u8; 32]>,
+    pub(crate) operation_id: Option<[u8; 32]>,
+}
+
+impl_db_record!(
+    key = PendingOperationKey,
+    value = PendingOperationRecord,
+    db_prefix = DbKeyPrefix::PendingOperation,
+);
+
+impl_db_lookup!(
+    key = PendingOperationKey,
+    query_prefix = PendingOperationPrefix
+);

@@ -1,0 +1,26 @@
+/*
+ * Read-only helper used by audit-android-vulnerabilities.sh. It intentionally
+ * lives outside the application build so audit reporting cannot affect APKs.
+ */
+gradle.projectsEvaluated {
+    def app = gradle.rootProject.findProject(':app')
+    if (app == null) {
+        throw new GradleException('required :app project is unavailable')
+    }
+    app.tasks.register('exportReleaseRuntimeComponents') {
+        doLast {
+            def configuration = app.configurations.getByName('releaseRuntimeClasspath')
+            def components = configuration.incoming.resolutionResult.allComponents
+                .findAll { it.id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier }
+                .collect { it.moduleVersion }
+                .findAll { it != null }
+                .collect { "${it.group}\t${it.name}\t${it.version}" }
+                .toSet()
+                .sort()
+            if (components.isEmpty()) {
+                throw new GradleException('resolved release runtime graph is empty')
+            }
+            components.each { println("PYX_COMPONENT\t${it}") }
+        }
+    }
+}

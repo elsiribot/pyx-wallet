@@ -1,12 +1,13 @@
 use crate::Bolt11InvoiceWrapper;
+#[cfg(feature = "flutter-bridge")]
 use flutter_rust_bridge::frb;
 use regex::Regex;
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct LnurlWrapper(pub(crate) String);
 
 impl LnurlWrapper {
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn encode(&self) -> String {
         fedimint_lnurl::encode_lnurl(&self.0)
     }
@@ -43,7 +44,7 @@ const MERCHANT_PATTERNS: &[&str] = &[
     r"^.{2}/.{4}/.{20}$",
 ];
 
-#[frb(sync)]
+#[cfg_attr(feature = "flutter-bridge", frb(sync))]
 pub fn parse_lnurl(request: &str) -> Option<LnurlWrapper> {
     if let Some(stripped) = request.strip_prefix("lightning:") {
         return parse_lnurl(stripped);
@@ -56,10 +57,11 @@ pub fn parse_lnurl(request: &str) -> Option<LnurlWrapper> {
     // Try to parse as URL and extract LNURL from query parameters
     if let Ok(url) = url::Url::parse(&request.to_lowercase()) {
         for (key, value) in url.query_pairs() {
-            if key == "lightning" || key == "lnurl" {
-                if let Some(result) = parse_lnurl(&value) {
-                    return Some(result);
-                }
+            if let Some(result) = (key == "lightning" || key == "lnurl")
+                .then(|| parse_lnurl(&value))
+                .flatten()
+            {
+                return Some(result);
             }
         }
     }
@@ -85,34 +87,34 @@ pub fn parse_lnurl(request: &str) -> Option<LnurlWrapper> {
     None
 }
 
-#[frb(opaque)]
+#[cfg_attr(feature = "flutter-bridge", frb(opaque))]
 pub struct PayResponseWrapper(fedimint_lnurl::PayResponse);
 
 impl PayResponseWrapper {
-    #[frb(sync, getter)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync, getter))]
     pub fn min_sats(&self) -> i64 {
         self.0.min_sendable as i64 / 1000
     }
 
-    #[frb(sync, getter)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync, getter))]
     pub fn max_sats(&self) -> i64 {
         self.0.max_sendable as i64 / 1000
     }
 
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn is_fixed_amount(&self) -> bool {
         self.0.min_sendable == self.0.max_sendable
     }
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub async fn lnurl_fetch_limits(lnurl: &LnurlWrapper) -> Result<PayResponseWrapper, String> {
     fedimint_lnurl::request(&lnurl.0)
         .await
         .map(PayResponseWrapper)
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub async fn lnurl_resolve(
     pay_response: &PayResponseWrapper,
     amount_sats: i64,

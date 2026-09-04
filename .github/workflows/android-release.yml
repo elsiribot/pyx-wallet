@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # Required for updating the rolling release
+  contents: write
 
-# A newer push supersedes any in-flight build of the same branch
 concurrency:
   group: apk-${{ github.ref }}
   cancel-in-progress: true
@@ -17,40 +16,35 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
-          # Matches the flake.nix dev shell; gradle 8.14.3 / AGP 8.11.1 /
-          # Kotlin 2.2.20 in the repo are this version's minimums.
-          flutter-version: '3.47.0'
-          channel: 'stable'
-          cache: true
+          distribution: temurin
+          java-version: '17'
 
-      - name: Cache pub packages
-        uses: actions/cache@v4
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
-          restore-keys: pub-${{ runner.os }}-
+          gradle-version: '8.14.4'
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: gradle-${{ runner.os }}-
+      - name: Install Android SDK and NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-36' \
+            'build-tools;35.0.0' \
+            'ndk;28.2.13676358'
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           targets: aarch64-linux-android
+          components: rustfmt, clippy
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -63,41 +57,16 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
           restore-keys: cargo-${{ runner.os }}-
 
-      - name: Install Android NDK
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
-
       - name: Install cargo-ndk
-        run: command -v cargo-ndk || cargo install cargo-ndk
+        run: command -v cargo-ndk || cargo install cargo-ndk --locked --version 4.1.2
 
-      - name: Install Flutter Rust Bridge CLI
+      - name: Check and test standalone native core
         run: |
-          flutter_rust_bridge_codegen --version 2>/dev/null | grep -q 2.10.0 \
-            || cargo install flutter_rust_bridge_codegen --version "2.10.0" --locked
-
-      - name: Install Flutter dependencies
-        run: flutter pub get
-
-      - name: Generate Flutter Rust Bridge bindings
-        run: flutter_rust_bridge_codegen generate
-
-      - name: Build Rust library for Android
-        run: |
-          ROOT="$(pwd)"
-          JNI_LIBS_DIR="$ROOT/android/app/src/main/jniLibs/arm64-v8a"
-          mkdir -p "$JNI_LIBS_DIR"
-
-          cd "$ROOT/rust"
-          # 16KB page alignment for Android 15+; --platform 24 because the
-          # bundled RocksDB uses POSIX_MADV_* (API >= 23).
-          RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384" \
-            cargo ndk -t arm64-v8a --platform 24 build --release
-
-          cp "$ROOT/rust/target/aarch64-linux-android/release/libconduit.so" "$JNI_LIBS_DIR/"
-
-          # Bundle the matching C++ shared library from the NDK.
-          cp "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" "$JNI_LIBS_DIR/"
+          cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+          cargo clippy --locked --manifest-path rust/Cargo.toml \
+            --no-default-features --features android-jni --all-targets -- -D warnings
+          cargo test --locked --manifest-path rust/Cargo.toml \
+            --no-default-features --features android-jni
 
       - name: Set up release keystore
         run: |
@@ -109,25 +78,26 @@ jobs:
           storeFile=keystore.p12
           EOF
 
-      - name: Build Flutter APK
-        # arm64 only: phones. The abiFilters in build.gradle.kts are ignored
-        # by the Flutter gradle plugin; --target-platform is the working knob.
-        run: flutter build apk --release --target-platform android-arm64
+      - name: Build and certify Kotlin/Compose release APK
+        run: tool/build-native-android.sh --release
+
+      - name: Review native release security invariants
+        run: >-
+          tool/review-native-android-security.sh
+          --apk android-native/app/build/outputs/apk/release/app-release.apk
 
       - name: Name APK after the commit
         run: |
           echo "SHORT_SHA=${GITHUB_SHA::9}" >> "$GITHUB_ENV"
-          mv build/app/outputs/flutter-apk/app-release.apk \
-             "build/app/outputs/flutter-apk/pyx-wallet-${GITHUB_SHA::9}.apk"
+          mv android-native/app/build/outputs/apk/release/app-release.apk \
+             "android-native/app/build/outputs/apk/release/pyx-wallet-${GITHUB_SHA::9}.apk"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: pyx-wallet-apk-${{ env.SHORT_SHA }}
-          path: build/app/outputs/flutter-apk/pyx-wallet-*.apk
+          path: android-native/app/build/outputs/apk/release/pyx-wallet-*.apk
 
-      # One release per build, named after the commit. GitHub's
-      # /releases/latest link always points at the newest one.
       - name: Create build release
         uses: ncipollo/release-action@v1
         with:
@@ -135,14 +105,13 @@ jobs:
           commit: ${{ github.sha }}
           name: 'Pyx Wallet ${{ env.SHORT_SHA }}'
           body: |
-            Signed arm64 build of ${{ github.sha }}.
+            Signed arm64 Kotlin/Jetpack Compose build of ${{ github.sha }}.
 
             ${{ github.event.head_commit.message }}
 
-            Download the APK below and open it on your phone to
-            install/update — every build is signed with the same key, so
-            it installs over the previous version.
-          artifacts: 'build/app/outputs/flutter-apk/pyx-wallet-*.apk'
+            Download the APK below and open it on your phone to install/update.
+            It retains the production package identity and signing lineage.
+          artifacts: 'android-native/app/build/outputs/apk/release/pyx-wallet-*.apk'
           draft: false
           prerelease: false
         env:

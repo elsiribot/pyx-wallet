@@ -1,0 +1,99 @@
+package cash.pyx.app.debug
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import cash.pyx.app.data.BootstrapState
+import cash.pyx.app.nativeapi.*
+import cash.pyx.app.ui.HomeRefreshStatus
+import cash.pyx.app.ui.PyxApp
+import cash.pyx.app.ui.theme.PyxTheme
+
+/** Debug-only, fixed synthetic states for screenshot certification. Never accepts wallet payloads. */
+class ScreenshotFixtureActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val fixture = intent.getStringExtra(EXTRA_FIXTURE).orEmpty()
+        setContent { PyxTheme { ScreenshotFixture(fixture) } }
+    }
+
+    companion object { const val EXTRA_FIXTURE = "fixture" }
+}
+
+@Composable
+private fun ScreenshotFixture(fixture: String) = when (fixture) {
+    "onboarding", "large_font_narrow" -> PyxApp(
+        state = BootstrapState.Onboarding(BootstrapSession.Uninitialized("synthetic", 1L)),
+    )
+    "home_status_activity" -> PyxApp(
+        state = syntheticHome(),
+        connection = GuardianConnectionSnapshot(
+            guardians = listOf(GuardianStatus("Guardian Alpha", true), GuardianStatus("Guardian Beta", true), GuardianStatus("Guardian Gamma", false)),
+            onlineCount = 2, totalCount = 3, requiredCount = 2, state = ConnectionState.DEGRADED,
+        ),
+        fiatBalance = FiatDisplay("25.00", "USD", "US Dollar", "\$", 2),
+        refreshStatus = HomeRefreshStatus.Degraded(1_788_000_000_000L, 2),
+    )
+    "send_receive_confirmation" -> FixtureList("Send and receive review — synthetic") {
+        item { SafetyCard("Receive Lightning", "1,250 sats · fee 5 sats", "Synthetic request · NOT PAYABLE") }
+        item { SafetyCard("Review send", "8,000 sats · fee 12 sats", "No payment will be submitted from this fixture") }
+        item { Button(onClick = {}, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Confirm synthetic review") } }
+    }
+    "settings_access_seed_safe" -> FixtureList("Settings and access — synthetic") {
+        item { ListItem(headlineContent = { Text("Biometric protection") }, supportingContent = { Text("Strong biometric available") }, trailingContent = { Switch(true, {}) }) }
+        item { SafetyCard("Recovery words", "Hidden until authentication succeeds", "No seed words are present in this fixture") }
+        item { OutlinedButton(onClick = {}, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Authenticate to reveal") } }
+    }
+    "error_offline" -> FixtureList("Offline and error states — synthetic") {
+        item { SafetyCard("Wallet is offline", "Showing cached information", "Last refresh unavailable") }
+        item { Text("Could not reach federation guardians", color = MaterialTheme.colorScheme.error) }
+        item { Button(onClick = {}, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Try again") } }
+    }
+    else -> FixtureList("Unknown synthetic fixture") { item { Text("Fixture rejected") } }
+}
+
+private fun syntheticHome() = BootstrapState.Home(
+    factoryHandle = 2L,
+    snapshot = WalletSnapshot(
+        currencyCode = "USD",
+        federations = listOf(FederationSummary("synthetic-fed", "Example federation", 3)),
+        selected = SelectedWallet(
+            clientHandle = 3L, federationId = "synthetic-fed", name = "Example federation", balanceSat = 50_000L,
+            payments = listOf(
+                Payment("synthetic-in", PaymentDirection.INCOMING, PaymentType.LIGHTNING, 1_250L, timestampMillis = 1_788_000_000_000L, status = PaymentStatus.SUCCEEDED),
+                Payment("synthetic-out", PaymentDirection.OUTGOING, PaymentType.ONCHAIN, 8_000L, feeSat = 12L, timestampMillis = 1_787_999_000_000L, status = PaymentStatus.PENDING),
+            ),
+        ),
+    ),
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FixtureList(title: String, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+    Scaffold(topBar = { TopAppBar(title = { Text("Pyx Wallet") }) }) { padding ->
+        LazyColumn(
+            Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item { Text(title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.semantics { heading() }) }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SafetyCard(title: String, detail: String, safety: String) = Card(Modifier.fillMaxWidth()) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text(detail)
+        Text(safety, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}

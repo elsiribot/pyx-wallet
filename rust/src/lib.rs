@@ -1,3 +1,5 @@
+#[cfg(any(feature = "android-jni", test))]
+mod android;
 mod client;
 mod currency;
 mod db;
@@ -5,6 +7,7 @@ mod events;
 mod exchange;
 mod factory;
 mod fountain;
+#[cfg(feature = "flutter-bridge")]
 mod frb_generated;
 mod lnurl;
 
@@ -20,6 +23,7 @@ use fedimint_core::invite_code::InviteCode;
 use fedimint_mint_client::OOBNotes;
 use fedimint_mintv2_client::ECash;
 use fedimint_rocksdb::RocksDb;
+#[cfg(feature = "flutter-bridge")]
 use flutter_rust_bridge::frb;
 use lightning_invoice::Bolt11Invoice;
 
@@ -35,7 +39,7 @@ pub use factory::{ConduitClientFactory, ConduitContact, FederationInfo};
 pub use fountain::{ECashDecoder, ECashEncoder};
 pub use lnurl::{LnurlWrapper, PayResponseWrapper, lnurl_fetch_limits, lnurl_resolve, parse_lnurl};
 
-#[frb(sync)]
+#[cfg_attr(feature = "flutter-bridge", frb(sync))]
 pub fn word_list() -> Vec<String> {
     Language::English
         .word_list()
@@ -44,29 +48,29 @@ pub fn word_list() -> Vec<String> {
         .collect()
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct MnemonicWrapper(pub(crate) Mnemonic);
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub fn parse_mnemonic(words: Vec<String>) -> Option<MnemonicWrapper> {
     Mnemonic::from_str(&words.join(" "))
         .ok()
         .map(MnemonicWrapper)
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub fn generate_mnemonic() -> MnemonicWrapper {
     MnemonicWrapper(Mnemonic::generate(12).unwrap())
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct DatabaseWrapper(pub(crate) Database);
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub async fn open_database(db_path: &str) -> DatabaseWrapper {
     fedimint_core::rustls::install_crypto_provider().await;
 
-    let db_path = PathBuf::from_str(&db_path)
+    let db_path = PathBuf::from_str(db_path)
         .expect("Could not parse db path")
         .join("client.db");
 
@@ -75,11 +79,11 @@ pub async fn open_database(db_path: &str) -> DatabaseWrapper {
         .expect("Could not open database")
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 #[derive(Clone)]
 pub struct InviteCodeWrapper(pub(crate) InviteCode);
 
-#[frb(sync)]
+#[cfg_attr(feature = "flutter-bridge", frb(sync))]
 pub fn parse_invite_code(invite: &str) -> Option<InviteCodeWrapper> {
     InviteCode::from_str(invite).ok().map(InviteCodeWrapper)
 }
@@ -89,11 +93,11 @@ pub(crate) enum EcashToken {
     V2(ECash),
 }
 
-#[frb(opaque)]
+#[cfg_attr(feature = "flutter-bridge", frb(opaque))]
 pub struct ECashWrapper(pub(crate) EcashToken);
 
 impl ECashWrapper {
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn amount_sats(&self) -> i64 {
         match &self.0 {
             EcashToken::V1(notes) => notes.total_amount().msats as i64 / 1000,
@@ -101,7 +105,8 @@ impl ECashWrapper {
         }
     }
 
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
+    #[allow(clippy::inherent_to_string)] // Stable FRB/JNI-facing method name.
     pub fn to_string(&self) -> String {
         match &self.0 {
             EcashToken::V1(notes) => encode_prefixed(FEDIMINT_PREFIX, notes),
@@ -110,7 +115,7 @@ impl ECashWrapper {
     }
 }
 
-#[frb(sync)]
+#[cfg_attr(feature = "flutter-bridge", frb(sync))]
 pub fn parse_ecash(notes: &str) -> Option<ECashWrapper> {
     if let Some(stripped) = notes.strip_prefix("fedimint:") {
         return parse_ecash(stripped);
@@ -127,11 +132,11 @@ pub fn parse_ecash(notes: &str) -> Option<ECashWrapper> {
     None
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct Bolt11InvoiceWrapper(pub(crate) Bolt11Invoice);
 
 impl Bolt11InvoiceWrapper {
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
     pub fn amount_sats(&self) -> i64 {
         self.0
             .amount_milli_satoshis()
@@ -140,7 +145,7 @@ impl Bolt11InvoiceWrapper {
     }
 }
 
-#[frb(sync)]
+#[cfg_attr(feature = "flutter-bridge", frb(sync))]
 pub fn parse_bolt11_invoice(invoice: &str) -> Option<Bolt11InvoiceWrapper> {
     if let Some(invoice) = invoice.strip_prefix("lightning:") {
         return parse_bolt11_invoice(invoice);
@@ -152,17 +157,18 @@ pub fn parse_bolt11_invoice(invoice: &str) -> Option<Bolt11InvoiceWrapper> {
         .map(Bolt11InvoiceWrapper)
 }
 
-#[frb]
+#[cfg_attr(feature = "flutter-bridge", frb)]
 pub struct BitcoinAddressWrapper(pub(crate) bitcoin::Address<NetworkUnchecked>);
 
 impl BitcoinAddressWrapper {
-    #[frb(sync)]
+    #[cfg_attr(feature = "flutter-bridge", frb(sync))]
+    #[allow(clippy::inherent_to_string)] // Stable FRB/JNI-facing method name.
     pub fn to_string(&self) -> String {
         self.0.clone().assume_checked().to_string()
     }
 }
 
-#[frb(sync)]
+#[cfg_attr(feature = "flutter-bridge", frb(sync))]
 pub fn parse_bitcoin_address(address: &str) -> Option<BitcoinAddressWrapper> {
     if let Some(stripped) = address.strip_prefix("bitcoin:") {
         return parse_bitcoin_address(stripped);
