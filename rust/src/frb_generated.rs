@@ -31,7 +31,7 @@ use crate::fountain::*;
 use crate::lnurl::*;
 use crate::*;
 use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
-use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
 use flutter_rust_bridge::{Handler, IntoIntoDart};
 
 // Section: boilerplate
@@ -42,7 +42,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.10.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1759290631;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -798802545;
 
 // Section: executor
 
@@ -3013,6 +3013,38 @@ fn wire__crate__fountain__ECashDecoder_add_fragment_impl(
         },
     )
 }
+fn wire__crate__fountain__ECashDecoder_default_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "ECashDecoder_default",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok(crate::fountain::ECashDecoder::default())?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__fountain__ECashDecoder_new_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -5235,17 +5267,18 @@ fn pde_ffi_dispatcher_primary_impl(
             rust_vec_len,
             data_len,
         ),
-        52 => wire__crate__fountain__ECashEncoder_next_fragment_impl(
+        50 => wire__crate__fountain__ECashDecoder_default_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__fountain__ECashEncoder_next_fragment_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        65 => wire__crate__generate_mnemonic_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__lnurl__lnurl_fetch_limits_impl(port, ptr, rust_vec_len, data_len),
-        68 => wire__crate__lnurl__lnurl_resolve_impl(port, ptr, rust_vec_len, data_len),
-        70 => wire__crate__open_database_impl(port, ptr, rust_vec_len, data_len),
-        76 => wire__crate__parse_mnemonic_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__generate_mnemonic_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__lnurl__lnurl_fetch_limits_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__lnurl__lnurl_resolve_impl(port, ptr, rust_vec_len, data_len),
+        71 => wire__crate__open_database_impl(port, ptr, rust_vec_len, data_len),
+        77 => wire__crate__parse_mnemonic_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5272,54 +5305,54 @@ fn pde_ffi_dispatcher_sync_impl(
         47 => wire__crate__factory__ConduitContact_match_query_impl(ptr, rust_vec_len, data_len),
         48 => wire__crate__factory__ConduitContact_name_impl(ptr, rust_vec_len, data_len),
         49 => wire__crate__fountain__ECashDecoder_add_fragment_impl(ptr, rust_vec_len, data_len),
-        50 => wire__crate__fountain__ECashDecoder_new_impl(ptr, rust_vec_len, data_len),
-        51 => wire__crate__fountain__ECashEncoder_new_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__ECashWrapper_amount_sats_impl(ptr, rust_vec_len, data_len),
-        54 => wire__crate__ECashWrapper_to_string_impl(ptr, rust_vec_len, data_len),
-        55 => wire__crate__factory__FederationInfo_auto_accessor_get_guardians_impl(
+        51 => wire__crate__fountain__ECashDecoder_new_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__fountain__ECashEncoder_new_impl(ptr, rust_vec_len, data_len),
+        54 => wire__crate__ECashWrapper_amount_sats_impl(ptr, rust_vec_len, data_len),
+        55 => wire__crate__ECashWrapper_to_string_impl(ptr, rust_vec_len, data_len),
+        56 => wire__crate__factory__FederationInfo_auto_accessor_get_guardians_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        56 => wire__crate__factory__FederationInfo_auto_accessor_get_id_impl(
+        57 => wire__crate__factory__FederationInfo_auto_accessor_get_id_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        57 => wire__crate__factory__FederationInfo_auto_accessor_get_name_impl(
+        58 => wire__crate__factory__FederationInfo_auto_accessor_get_name_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        58 => wire__crate__factory__FederationInfo_auto_accessor_set_guardians_impl(
+        59 => wire__crate__factory__FederationInfo_auto_accessor_set_guardians_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        59 => wire__crate__factory__FederationInfo_auto_accessor_set_id_impl(
+        60 => wire__crate__factory__FederationInfo_auto_accessor_set_id_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        60 => wire__crate__factory__FederationInfo_auto_accessor_set_name_impl(
+        61 => wire__crate__factory__FederationInfo_auto_accessor_set_name_impl(
             ptr,
             rust_vec_len,
             data_len,
         ),
-        61 => {
+        62 => {
             wire__crate__lnurl__PayResponseWrapper_is_fixed_amount_impl(ptr, rust_vec_len, data_len)
         }
-        62 => wire__crate__lnurl__PayResponseWrapper_max_sats_impl(ptr, rust_vec_len, data_len),
-        63 => wire__crate__lnurl__PayResponseWrapper_min_sats_impl(ptr, rust_vec_len, data_len),
-        64 => wire__crate__currency__find_fiat_currency_impl(ptr, rust_vec_len, data_len),
-        66 => wire__crate__currency__list_fiat_currencies_impl(ptr, rust_vec_len, data_len),
-        69 => wire__crate__lnurl__lnurl_wrapper_encode_impl(ptr, rust_vec_len, data_len),
-        71 => wire__crate__parse_bitcoin_address_impl(ptr, rust_vec_len, data_len),
-        72 => wire__crate__parse_bolt11_invoice_impl(ptr, rust_vec_len, data_len),
-        73 => wire__crate__parse_ecash_impl(ptr, rust_vec_len, data_len),
-        74 => wire__crate__parse_invite_code_impl(ptr, rust_vec_len, data_len),
-        75 => wire__crate__lnurl__parse_lnurl_impl(ptr, rust_vec_len, data_len),
-        77 => wire__crate__word_list_impl(ptr, rust_vec_len, data_len),
+        63 => wire__crate__lnurl__PayResponseWrapper_max_sats_impl(ptr, rust_vec_len, data_len),
+        64 => wire__crate__lnurl__PayResponseWrapper_min_sats_impl(ptr, rust_vec_len, data_len),
+        65 => wire__crate__currency__find_fiat_currency_impl(ptr, rust_vec_len, data_len),
+        67 => wire__crate__currency__list_fiat_currencies_impl(ptr, rust_vec_len, data_len),
+        70 => wire__crate__lnurl__lnurl_wrapper_encode_impl(ptr, rust_vec_len, data_len),
+        72 => wire__crate__parse_bitcoin_address_impl(ptr, rust_vec_len, data_len),
+        73 => wire__crate__parse_bolt11_invoice_impl(ptr, rust_vec_len, data_len),
+        74 => wire__crate__parse_ecash_impl(ptr, rust_vec_len, data_len),
+        75 => wire__crate__parse_invite_code_impl(ptr, rust_vec_len, data_len),
+        76 => wire__crate__lnurl__parse_lnurl_impl(ptr, rust_vec_len, data_len),
+        78 => wire__crate__word_list_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6536,7 +6569,7 @@ mod io {
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
     };
-    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+    use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
     use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate
@@ -6775,7 +6808,7 @@ mod web {
     };
     use flutter_rust_bridge::for_generated::wasm_bindgen;
     use flutter_rust_bridge::for_generated::wasm_bindgen::prelude::*;
-    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+    use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
     use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate
