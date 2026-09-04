@@ -63,9 +63,15 @@ class HomeCollapsingHeaderComposeTest {
         setHome(width = 280, height = 600, fontScale = 2f)
         composeRule.onNodeWithTag("wallet_home").performScrollToIndex(6)
         composeRule.onNodeWithTag("balance_header_collapsed").assertIsDisplayed()
-        listOf("Receive", "Send", "Scan").forEach { label ->
+        // Receive/Send live in the balance card at the top of the list; reachable
+        // means the user can scroll back to them after collapsing.
+        composeRule.onNodeWithTag("wallet_home").performScrollToIndex(0)
+        composeRule.waitForIdle()
+        listOf("Receive", "Send").forEach { label ->
             composeRule.onNodeWithText(label).performScrollTo().assertIsDisplayed()
         }
+        // The scan action floats above the list, so it is reachable without scrolling.
+        composeRule.onNodeWithText("Scan").assertIsDisplayed()
     }
 
     private fun setHome(width: Int = 390, height: Int = 844, fontScale: Float = 1f) {

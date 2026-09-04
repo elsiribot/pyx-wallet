@@ -152,7 +152,8 @@ class AdaptiveSecurityTest {
             "Send" to listOf("Lightning" to "Review and send", "On-chain" to "Review and send", "Ecash" to "Review and send"),
         ).forEach { (destination, tabs) ->
             tabs.forEach { (tab, action) ->
-                composeRule.onNodeWithTag("wallet_home").performScrollToIndex(4)
+                // Receive/Send are inside the balance card at list index 1.
+                composeRule.onNodeWithTag("wallet_home").performScrollToIndex(0)
                 composeRule.onNodeWithText(destination).performClick()
                 waitForText("Back")
                 if (tab != "Lightning") composeRule.onNodeWithText(tab).performClick()
