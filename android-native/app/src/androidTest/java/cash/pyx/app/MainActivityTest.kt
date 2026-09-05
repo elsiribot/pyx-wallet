@@ -87,8 +87,8 @@ class MainActivityTest {
         }
 
         composeRule.onNodeWithText("Settings").performClick()
-        composeRule.onNodeWithText("Configure access protection").performClick()
-        composeRule.onNodeWithText("Access").assertIsDisplayed()
+        composeRule.onNodeWithText("Access Control").performClick()
+        composeRule.onNodeWithText("Access Control").assertIsDisplayed()
         composeRule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         composeRule.onNodeWithText("About").assertIsDisplayed()
         composeRule.onNodeWithText("Recovery words").performClick()
@@ -102,8 +102,8 @@ class MainActivityTest {
         }
 
         composeRule.onNodeWithText("Settings").performClick()
-        composeRule.onNodeWithText("Currency").performClick()
-        composeRule.onNodeWithText("Search currencies").assertIsDisplayed()
+        composeRule.onNodeWithText("Default Currency").performClick()
+        composeRule.onNodeWithText("Search currency or code").assertIsDisplayed()
         composeRule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         composeRule.onNodeWithText("About").assertIsDisplayed()
     }
@@ -131,7 +131,7 @@ class MainActivityTest {
         composeRule.onNodeWithText("Guardians").performClick()
         composeRule.onNodeWithText("Guardian One").assertIsDisplayed()
         composeRule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
-        composeRule.onNodeWithText("Load federation details").assertIsDisplayed()
+        composeRule.onNodeWithText("Wallet Provider").assertIsDisplayed()
     }
 
     @Test
@@ -178,8 +178,8 @@ class MainActivityTest {
             PyxTheme { PyxApp(state = BootstrapState.Home(7L, WalletSnapshot("USD", emptyList(), null))) }
         }
         composeRule.onNodeWithText("Settings").performClick()
-        composeRule.onNodeWithText("Configure access protection").performClick()
-        composeRule.onNodeWithText("Access").assertIsDisplayed()
+        composeRule.onNodeWithText("Access Control").performClick()
+        composeRule.onNodeWithText("Access Control").assertIsDisplayed()
 
         composeRule.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
         composeRule.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)

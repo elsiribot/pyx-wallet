@@ -42,6 +42,9 @@ object PyxType {
     val input = TextStyle(fontFamily = SpaceGrotesk, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
     val inputMono = TextStyle(fontFamily = SpaceGrotesk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
     val fiat = TextStyle(fontFamily = SpaceGrotesk, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    val settingsValue = TextStyle(fontFamily = Inter, fontSize = 13.sp, fontWeight = FontWeight.Normal)
+    val seedNum = TextStyle(fontFamily = SpaceGrotesk, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+    val seedWord = TextStyle(fontFamily = SpaceGrotesk, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.01).em)
 }
 
 /** Material roles mapped onto the two brand faces so unstyled components inherit the look. */

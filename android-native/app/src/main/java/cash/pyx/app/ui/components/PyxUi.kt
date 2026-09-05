@@ -1,18 +1,33 @@
 package cash.pyx.app.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
@@ -21,19 +36,49 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.em
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cash.pyx.app.ui.theme.PyxBorder
 import cash.pyx.app.ui.theme.PyxFaint
+import cash.pyx.app.ui.theme.PyxGreen
 import cash.pyx.app.ui.theme.PyxIcons
+import cash.pyx.app.ui.theme.PyxOnGreen
 import cash.pyx.app.ui.theme.PyxMuted
 import cash.pyx.app.ui.theme.PyxOnOrange
 import cash.pyx.app.ui.theme.PyxOrange
@@ -153,6 +198,7 @@ fun CardRow(
     subtitle: String? = null,
     chevron: Boolean = false,
     valueColor: Color = PyxMuted,
+    valueStyle: TextStyle = PyxType.keyValue,
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
     trailing: (@Composable () -> Unit)? = null,
@@ -170,7 +216,7 @@ fun CardRow(
             Text(title, style = PyxType.rowTitle, color = PyxText)
             if (subtitle != null) Text(subtitle, style = PyxType.rowSub, color = PyxMuted)
         }
-        if (value != null) Text(value, style = PyxType.keyValue, color = valueColor)
+        if (value != null) Text(value, style = valueStyle, color = valueColor)
         if (trailing != null) trailing()
         if (chevron) Icon(PyxIcons.ChevronRight, contentDescription = null, tint = PyxFaint, modifier = Modifier.size(18.dp))
     }
@@ -309,8 +355,17 @@ private val AvatarPalette = listOf(
 @Composable
 fun InitialAvatar(name: String, modifier: Modifier = Modifier, size: Dp = 40.dp) {
     val color = AvatarPalette[(name.hashCode().let { if (it < 0) -it else it }) % AvatarPalette.size]
-    Box(modifier.size(size).background(color, CircleShape), contentAlignment = Alignment.Center) {
-        Text(name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium, color = PyxText)
+    // 145-degree gradient toward a darker shade, like the prototype avatars.
+    val gradient = androidx.compose.ui.graphics.Brush.linearGradient(
+        listOf(color, Color(color.red * 0.72f, color.green * 0.72f, color.blue * 0.72f)),
+    )
+    val initialSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.36f).toSp() }
+    Box(modifier.size(size).background(gradient, CircleShape), contentAlignment = Alignment.Center) {
+        Text(
+            name.take(1).uppercase(),
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = initialSize),
+            color = PyxText,
+        )
     }
 }
 
@@ -318,4 +373,313 @@ fun InitialAvatar(name: String, modifier: Modifier = Modifier, size: Dp = 40.dp)
 @Composable
 fun StatusDot(color: Color, modifier: Modifier = Modifier) {
     Box(modifier.size(8.dp).background(color, CircleShape))
+}
+
+/** Prototype seed-warn banner: red-tinted surface with a warning triangle. */
+@Composable
+fun SeedWarnBanner(text: String, modifier: Modifier = Modifier) {
+    Surface(
+        color = cash.pyx.app.ui.theme.PyxRed.copy(alpha = 0.07f),
+        shape = RoundedCornerShape(13.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, cash.pyx.app.ui.theme.PyxRed.copy(alpha = 0.32f)),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            horizontalArrangement = Arrangement.spacedBy(11.dp),
+        ) {
+            Icon(PyxIcons.Warn, contentDescription = null, tint = cash.pyx.app.ui.theme.PyxRed,
+                modifier = Modifier.padding(top = 1.dp).size(18.dp))
+            Text(text, style = PyxType.rowSub, color = PyxText)
+        }
+    }
+}
+
+/**
+ * Prototype 2-column numbered seed grid. Semantics collapse to the joined
+ * phrase so assistive tech (and tests) read the words as one ordered string.
+ */
+@Composable
+fun SeedWordGrid(words: List<String>, modifier: Modifier = Modifier) {
+    Column(
+        modifier.fillMaxWidth().clearAndSetSemantics { text = AnnotatedString(words.joinToString(" ")) },
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        words.chunked(2).forEachIndexed { rowIndex, pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                pair.forEachIndexed { columnIndex, word ->
+                    Surface(
+                        color = PyxSurface,
+                        shape = RoundedCornerShape(11.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, PyxBorder),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        ) {
+                            Text(
+                                "${rowIndex * 2 + columnIndex + 1}",
+                                style = PyxType.seedNum, color = PyxFaint,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                modifier = Modifier.widthIn(min = 17.dp),
+                            )
+                            Text(word, style = PyxType.seedWord, color = PyxText)
+                        }
+                    }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/**
+ * Prototype scan viewfinder: dark radial square, accent corner brackets, and an
+ * optional sweeping accent line. [content] (e.g. a camera preview) fills the frame
+ * beneath the overlay. Pass sweep = false under reduced motion.
+ */
+@Composable
+fun ScanFrame(
+    modifier: Modifier = Modifier,
+    sweep: Boolean = false,
+    content: @Composable BoxScope.() -> Unit = {},
+) {
+    val sweepFraction = if (sweep) {
+        rememberInfiniteTransition(label = "scan-sweep").animateFloat(
+            initialValue = 0.07f,
+            targetValue = 0.91f,
+            animationSpec = infiniteRepeatable(tween(1300, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "sweep",
+        ).value
+    } else -1f
+    Box(
+        modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Brush.radialGradient(listOf(Color(0xFF10161F), Color(0xFF070A0E))))
+            .border(1.dp, PyxBorder, RoundedCornerShape(24.dp)),
+    ) {
+        content()
+        Canvas(Modifier.matchParentSize()) {
+            val stroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+            val inset = 14.dp.toPx()
+            val arm = 34.dp.toPx()
+            val w = size.width
+            val h = size.height
+            listOf(
+                Path().apply { moveTo(inset, inset + arm); lineTo(inset, inset); lineTo(inset + arm, inset) },
+                Path().apply { moveTo(w - inset - arm, inset); lineTo(w - inset, inset); lineTo(w - inset, inset + arm) },
+                Path().apply { moveTo(inset, h - inset - arm); lineTo(inset, h - inset); lineTo(inset + arm, h - inset) },
+                Path().apply { moveTo(w - inset - arm, h - inset); lineTo(w - inset, h - inset); lineTo(w - inset, h - inset - arm) },
+            ).forEach { path -> drawPath(path, color = PyxOrange, style = stroke) }
+            if (sweepFraction >= 0f) {
+                val y = h * sweepFraction
+                val lineBrush = Brush.horizontalGradient(listOf(Color.Transparent, PyxOrange, Color.Transparent))
+                val glowBrush = Brush.horizontalGradient(
+                    listOf(Color.Transparent, PyxOrange.copy(alpha = 0.25f), Color.Transparent),
+                )
+                drawRect(brush = glowBrush, topLeft = Offset(18.dp.toPx(), y - 4.dp.toPx()), size = Size(w - 36.dp.toPx(), 8.dp.toPx()))
+                drawRect(brush = lineBrush, topLeft = Offset(18.dp.toPx(), y - 1.dp.toPx()), size = Size(w - 36.dp.toPx(), 2.dp.toPx()))
+            }
+        }
+    }
+}
+
+/**
+ * Prototype slide-to-send: a 58dp track whose accent knob must be dragged to the
+ * far end to fire [onConfirm] exactly once. Partial drags snap back. Exposes an
+ * accessibility custom action so switch/TalkBack users can confirm without a drag.
+ */
+@Composable
+fun PyxSlideToConfirm(
+    enabled: Boolean,
+    done: Boolean,
+    onConfirm: () -> Unit,
+    modifier: Modifier = Modifier,
+    label: String = "Slide to send",
+    doneLabel: String = "Sending\u2026",
+) {
+    val density = LocalDensity.current
+    var trackWidthPx by remember { mutableFloatStateOf(0f) }
+    val knobWidthPx = with(density) { 66.dp.toPx() }
+    val endSlackPx = with(density) { 6.dp.toPx() }
+    val dragOffset = remember { Animatable(0f) }
+    var fired by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(done) {
+        if (!done) { fired = false; dragOffset.snapTo(0f) }
+    }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 58.dp)
+            .alpha(if (enabled || done) 1f else 0.45f)
+            .background(if (done) PyxGreen else PyxSurface, RoundedCornerShape(15.dp))
+            .border(1.dp, if (done) PyxGreen else PyxBorder, RoundedCornerShape(15.dp))
+            .onSizeChanged { trackWidthPx = it.width.toFloat() }
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction("Send") {
+                        if (enabled && !fired) { fired = true; onConfirm(); true } else false
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            if (done) doneLabel else label,
+            style = PyxType.button.copy(letterSpacing = 0.02.em),
+            color = if (done) PyxOnGreen else PyxMuted,
+        )
+        Box(
+            Modifier
+                .align(Alignment.CenterStart)
+                .offset { IntOffset(dragOffset.value.roundToInt() + with(density) { 3.dp.roundToPx() }, 0) }
+                .padding(vertical = 3.dp)
+                .size(width = 66.dp, height = 52.dp)
+                .background(if (done) PyxGreen else PyxOrange, RoundedCornerShape(14.dp))
+                .pointerInput(enabled, trackWidthPx) {
+                    if (!enabled) return@pointerInput
+                    val maxPx = (trackWidthPx - knobWidthPx - endSlackPx).coerceAtLeast(0f)
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            scope.launch {
+                                if (dragOffset.value >= maxPx - 1f && !fired && maxPx > 0f) {
+                                    fired = true
+                                    dragOffset.snapTo(maxPx)
+                                    onConfirm()
+                                } else {
+                                    dragOffset.animateTo(0f, tween(280, easing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f)))
+                                }
+                            }
+                        },
+                        onDragCancel = { scope.launch { dragOffset.animateTo(0f, tween(280)) } },
+                    ) { _, dragAmount ->
+                        scope.launch {
+                            val maxNow = (trackWidthPx - knobWidthPx - endSlackPx).coerceAtLeast(0f)
+                            dragOffset.snapTo((dragOffset.value + dragAmount).coerceIn(0f, maxNow))
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                PyxIcons.ArrowRight,
+                contentDescription = null,
+                tint = if (done) PyxOnGreen else PyxOnOrange,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+    }
+}
+
+/** House bottom-sheet chrome: surface fill, 26dp top radius, 40x4 grip, dark scrim. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun PyxSheet(
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = PyxSurface,
+        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+        scrimColor = Color(0xFF040609).copy(alpha = 0.55f),
+        dragHandle = {
+            Box(
+                Modifier.padding(top = 6.dp, bottom = 10.dp)
+                    .size(width = 40.dp, height = 4.dp)
+                    .background(cash.pyx.app.ui.theme.PyxBorderStrong, RoundedCornerShape(2.dp)),
+            )
+        },
+        modifier = modifier,
+        content = content,
+    )
+}
+
+/** Rounded surface-2 icon tile (prototype .tx .ic / .wallet-ic / method tiles). */
+@Composable
+fun IconTile(
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    tint: Color = PyxMuted,
+    size: Dp = 42.dp,
+    cornerRadius: Dp = 12.dp,
+    iconSize: Dp = 21.dp,
+    background: Color = PyxSurface2,
+) {
+    Box(
+        modifier.size(size).background(background, RoundedCornerShape(cornerRadius)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(iconSize))
+    }
+}
+
+/** Bordered ₿-badge pill naming the asset (prototype .asset-pill). */
+@Composable
+fun AssetPill(modifier: Modifier = Modifier, label: String = "Bitcoin") {
+    Row(
+        modifier
+            .background(PyxSurface, RoundedCornerShape(10.dp))
+            .border(1.dp, PyxBorder, RoundedCornerShape(10.dp))
+            .padding(start = 8.dp, end = 13.dp, top = 7.dp, bottom = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        BtcBadge(size = 24.dp)
+        Text(label, style = PyxType.rowSub.copy(fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = PyxText)
+    }
+}
+
+/** Live-region announcement line under copy/paste affordances. */
+@Composable
+fun AnnouncementText(
+    text: String?,
+    modifier: Modifier = Modifier,
+    mode: androidx.compose.ui.semantics.LiveRegionMode = androidx.compose.ui.semantics.LiveRegionMode.Polite,
+) {
+    text ?: return
+    Text(
+        text, style = PyxType.rowSub, color = PyxMuted,
+        modifier = modifier.semantics { liveRegion = mode },
+    )
+}
+
+/** Tap-to-open scan viewfinder with a centred prompt (join + ecash receive). */
+@Composable
+fun ScanPromptFrame(caption: String, onClickLabel: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    ScanFrame(modifier.clickable(onClickLabel = onClickLabel, onClick = onClick)) {
+        Column(
+            Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(PyxIcons.Scan, contentDescription = null, tint = PyxFaint, modifier = Modifier.size(44.dp))
+            Text(caption, style = PyxType.rowSub, color = PyxMuted)
+        }
+    }
+}
+
+/**
+ * Amount text whose trailing " sats" unit renders small and muted while the FULL
+ * string stays exactly [text] — tests and semantics match the amount verbatim.
+ */
+fun satAmountAnnotated(
+    text: String,
+    unitStyle: androidx.compose.ui.text.SpanStyle,
+    numberStyle: androidx.compose.ui.text.SpanStyle? = null,
+): AnnotatedString = androidx.compose.ui.text.buildAnnotatedString {
+    val unitStart = text.lastIndexOf(" sat")
+    if (unitStart <= 0) append(text)
+    else {
+        if (numberStyle != null) withStyle(numberStyle) { append(text.substring(0, unitStart)) }
+        else append(text.substring(0, unitStart))
+        withStyle(unitStyle) { append(text.substring(unitStart)) }
+    }
 }

@@ -13,10 +13,25 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.sp
+import cash.pyx.app.ui.components.PyxGhostButton
+import cash.pyx.app.ui.components.PyxPrimaryButton
+import cash.pyx.app.ui.components.PyxTopBar
+import cash.pyx.app.ui.components.ScanFrame
+import cash.pyx.app.ui.theme.PyxIcons
+import cash.pyx.app.ui.theme.PyxMuted
+import cash.pyx.app.ui.theme.PyxOrange
+import cash.pyx.app.ui.theme.PyxRed
+import cash.pyx.app.ui.theme.PyxSurface3
+import cash.pyx.app.ui.theme.PyxType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -103,16 +118,44 @@ fun QrScanner(
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
-    Column(Modifier.fillMaxSize()) {
-        TextButton(onClick = onBack, modifier = Modifier.minimumInteractiveComponentSize()) { Text("Back") }
+    // Reduced motion disables the prototype's sweeping scan line.
+    val reducedMotion = remember(context) {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }
+    var pasteNotice by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
+        PyxTopBar("Scan QR code", onBack = onBack)
         when (permission) {
             CameraPermissionUi.GRANTED -> if (bindFailure) {
-                Text("The camera could not be started.", color = MaterialTheme.colorScheme.error,
+                Text("The camera could not be started.", style = PyxType.body, color = PyxRed,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
-                Button(onClick = { bindFailure = false; retryGeneration++ }) { Text("Retry camera") }
+                PyxPrimaryButton("Retry camera", { bindFailure = false; retryGeneration++ },
+                    Modifier.fillMaxWidth().padding(top = 12.dp))
             } else {
-                if (progressFrames > 0) Text("Ecash fragments scanned: $progressFrames", modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-                key(retryGeneration) { CameraPreview(frameHandler) { bindFailure = true } }
+                ScanFrame(sweep = !reducedMotion) {
+                    key(retryGeneration) { CameraPreview(frameHandler) { bindFailure = true } }
+                }
+                if (progressFrames > 0) {
+                    Spacer(Modifier.height(26.dp))
+                    Box(
+                        Modifier.fillMaxWidth().height(8.dp)
+                            .background(PyxSurface3, RoundedCornerShape(999.dp)),
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth(fraction = (progressFrames / (progressFrames + 4f)).coerceIn(0f, 1f))
+                                .fillMaxHeight()
+                                .background(PyxOrange, RoundedCornerShape(999.dp)),
+                        )
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text("Point at the sender's Ecash QR", style = PyxType.rowSub, color = PyxMuted)
+                        Text("$progressFrames frames", style = PyxType.keyValue.copy(fontSize = 12.5.sp), color = PyxMuted,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    }
+                }
             }
             CameraPermissionUi.FIRST_REQUEST -> PermissionMessage("Camera access is needed to scan QR codes.", "Allow camera") {
                 launcher.launch(Manifest.permission.CAMERA)
@@ -127,6 +170,27 @@ fun QrScanner(
                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
             }
         }
+        Spacer(Modifier.height(20.dp))
+        PyxGhostButton(
+            "Paste from clipboard",
+            {
+                // Clipboard is read on explicit tap only; pasted content flows through
+                // the exact same frame handler as a scanned code.
+                val clip = (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                    .primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
+                when {
+                    clip.isNullOrBlank() -> pasteNotice = "Clipboard is empty"
+                    clip.length > 16 * 1024 -> pasteNotice = "Clipboard content is too large"
+                    else -> { pasteNotice = null; frameHandler(clip) }
+                }
+            },
+            Modifier.fillMaxWidth(),
+            icon = PyxIcons.Copy,
+        )
+        pasteNotice?.let {
+            Text(it, style = PyxType.rowSub, color = PyxMuted,
+                modifier = Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite })
+        }
     }
 }
 
@@ -134,11 +198,9 @@ private val CAMERA_PERMISSION_ASKED = booleanPreferencesKey("asked")
 
 @Composable
 private fun PermissionMessage(message: String, action: String, onClick: () -> Unit) {
-    Text(message, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-    Button(
-        onClick = onClick,
-        modifier = Modifier.heightIn(min = 48.dp),
-    ) { Text(action) }
+    Text(message, style = PyxType.body, color = PyxMuted,
+        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+    PyxPrimaryButton(action, onClick, Modifier.fillMaxWidth().padding(top = 12.dp).heightIn(min = 48.dp))
 }
 
 @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)

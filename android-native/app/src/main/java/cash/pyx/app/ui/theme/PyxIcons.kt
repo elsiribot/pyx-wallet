@@ -85,6 +85,44 @@ object PyxIcons {
     )
     val Transfers = strokeIcon("transfers", "M7 10l-3 3 3 3", "M4 13h13", "M17 8l3-3-3-3", "M20 5H8")
     val ChevronDown = strokeIcon("chevron-down", "M6 9l6 6 6-6")
+    val Plus = strokeIcon("plus", "M12 5v14", "M5 12h14")
+    val Lock = strokeIcon(
+        "lock",
+        "M6 11h12a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2z",
+        "M8 11V8a4 4 0 0 1 8 0v3",
+    )
+    val ArrowRight = strokeIcon("arrow-right", "M5 12h13", "M13 6l6 6-6 6")
+    val SquarePlus = strokeIcon(
+        "square-plus",
+        "M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z",
+        "M12 8v8",
+        "M8 12h8",
+    )
+    val Wallet = strokeIcon(
+        "wallet",
+        "M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z",
+        "M3 5v0a2 2 0 0 0 2 2h14",
+        "M16 14h.01",
+    )
+    val Fingerprint = strokeIcon(
+        "fingerprint",
+        "M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4",
+        "M14 13.12c0 2.38 0 6.38-1 8.88",
+        "M17.29 21.02c.12-.6.43-2.3.5-3.02",
+        "M2 12a10 10 0 0 1 18-6",
+        "M2 16h.01",
+        "M21.8 16c.2-2 .131-5.354 0-6",
+        "M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2",
+        "M8.65 22c.21-.66.45-1.32.57-2",
+        "M9 6.8a6 6 0 0 1 9 5.2v2",
+    )
+    val Info = strokeIcon("info", "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18", "M12 11v5", "M12 7.5h.01")
+    val Warn = strokeIcon(
+        "triangle-alert",
+        "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z",
+        "M12 9v4",
+        "M12 17h.01",
+    )
     val QrGlyph = strokeIcon(
         "qr-glyph",
         "M3 3h7v7H3z", "M14 3h7v7h-7z", "M3 14h7v7H3z",

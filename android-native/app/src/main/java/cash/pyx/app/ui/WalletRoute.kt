@@ -12,9 +12,9 @@ sealed interface PyxRoute {
 enum class WalletRoute(override val route: String, val title: String) : PyxRoute {
     HOME("home", "Home"), RECEIVE("receive", "Receive"), SEND("send", "Send"),
     SCAN("scan", "Scan"), WALLETS("wallets", "Wallets"),
-    DETAILS("details", "Details"), GUARDIANS("guardians", "Guardians"),
+    DETAILS("details", "Wallet Provider"), GUARDIANS("guardians", "Guardians"),
     SETTINGS("settings", "Settings"), CURRENCY("currency", "Currency"), CONTACTS("contacts", "Contacts"),
-    ADDRESSES("addresses", "Addresses"), ACCESS("access", "Access"),
+    ADDRESSES("addresses", "Addresses"), ACCESS("access", "Access Control"),
     SEED_BACKUP("seed_backup", "Recovery words"), JOIN("join", "Join"), RECOVER("recover", "Recover");
 
     companion object {
@@ -37,10 +37,7 @@ enum class WalletModalRoute(override val route: String) : PyxRoute {
     LEAVE_FEDERATION("modal_leave_federation"),
     ADDRESS_MUTATION("modal_address_mutation"),
     SUCCESSOR_REVIEW("modal_successor_review"),
-    PAYMENT_DETAIL("modal_payment_detail"),
     JOIN_CONFIRMATION("modal_join_confirmation"),
-    SEND_CONFIRMATION("modal_send_confirmation"),
-    ANOTHER_ADDRESS("modal_another_address"),
     SEED_COPY_WARNING("modal_seed_copy_warning"),
 }
 

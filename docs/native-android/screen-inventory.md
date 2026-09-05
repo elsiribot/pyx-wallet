@@ -18,7 +18,7 @@ Prototype names refer to `docs/design/prototype.html`; where no exact prototype 
 | `display_lnurl_screen` | generated personal LNURL | QR/copy/share; request is sensitive and ephemeral. |
 | `onchain_address_screen` | on-chain receive/history | list/generate/recheck address; loading, empty, generation/recheck error. |
 | `wallet_v2_receive_screen` | wallet-v2 receive result | federation stats plus address display; unavailable stats/address. |
-| `send_screen` | root Send action or incoming URI | parse/dispatch request; Lightning fees/send, on-chain send, contacts; invalid/unsupported, quote loading/error, submit/pending/error. |
+| `send_screen` | root Send action or incoming URI (2026-09-05: prototype anatomy — To field with contact dropdown + inline scan, destination-gated/locked amount with unit chip, max-fee gate, slide-to-send confirming quotes; see docs/native-android/design-review-backlog.md) | parse/dispatch request; Lightning fees/send, on-chain send, contacts; invalid/unsupported, quote loading/error, submit/pending/error. |
 | `lightning_address_entry_screen` | send to Lightning address | parse LNURL, contact lookup, then limits; invalid address/LNURL and lookup error. |
 | `lnurl_amount_screen` | valid pay LNURL | `lnurl_fetch_limits`, `lnurl_resolve`, `ln_calculate_fees`, contact name route; fixed/ranged amount, limits/resolve/quote errors. |
 | `confirm_lnurl_send_screen` | LNURL quote ready | `ln_send`; submitting, settled/error; never auto-send. |

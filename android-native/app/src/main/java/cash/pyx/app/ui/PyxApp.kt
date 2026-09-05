@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.Image
@@ -26,8 +25,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -49,6 +51,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import cash.pyx.app.data.BootstrapState
 import cash.pyx.app.data.ActivityDetailState
@@ -300,11 +303,13 @@ fun PyxApp(
                         ReceiveContent(state, operation, routedInput?.payload, routedInput?.type,
                             { routedInput = null; navController.returnHome() }, onOperation, onClearOperation,
                             ecashFrame, onStartEcashDisplay, onStopEcashDisplay, addresses,
-                            { navController.open(WalletRoute.SCAN) })
+                            { navController.open(WalletRoute.SCAN) }, currencySettingsState)
                     }
                     composable(WalletRoute.SEND.route) {
                         TransferContent(state, operation, routedInput?.payload, routedInput?.type,
-                            { routedInput = null; navController.returnHome() }, onOperation, onClearOperation, ecashFrame, onStartEcashDisplay, onStopEcashDisplay)
+                            { routedInput = null; navController.returnHome() }, onOperation, onClearOperation,
+                            ecashFrame, onStartEcashDisplay, onStopEcashDisplay,
+                            contactsState, { navController.open(WalletRoute.SCAN) })
                     }
                     composable(WalletRoute.SCAN.route) {
                         QrScanner(onResult = onClassify, onBack = { onStopEcashDecoder(); navController.returnHome() }, frameHandler = { frame ->
@@ -321,6 +326,7 @@ fun PyxApp(
                                 { navController.open(WalletRoute.CONTACTS) }, { navController.open(WalletRoute.ADDRESSES) },
                                 { navController.open(WalletRoute.ACCESS) }, { navController.open(WalletRoute.SEED_BACKUP) },
                                 { navController.open(WalletRoute.CURRENCY) }, { navController.open(WalletRoute.GUARDIANS) },
+                                { navController.open(WalletRoute.DETAILS) },
                                 onOperation, onClearOperation, biometricAvailable, biometricEnabled, onBiometricToggle, onBackup,
                                 contactsState, onClearContactsMessage, connection, federationState, recovery, recoveryExpiry,
                                 currencySettingsState, onClearCurrencyMessage, addresses, onClassify, pendingIrreversibleOperation,
@@ -385,23 +391,63 @@ private fun OnboardingContent(
         Modifier.fillMaxSize().testTag("bootstrap_content").verticalScroll(rememberScrollState()),
         verticalArrangement = if (restoring) Arrangement.Top else Arrangement.Center,
     ) {
+        if (!restoring) {
+            Box(
+                Modifier.size(64.dp).background(PyxOrange, RoundedCornerShape(18.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("P", style = PyxType.screenTitle.copy(fontSize = 34.sp), color = cash.pyx.app.ui.theme.PyxOnOrange)
+            }
+            Spacer(Modifier.height(18.dp))
+        }
         Text("Welcome to Pyx", style = PyxType.screenTitle, color = PyxText,
             modifier = Modifier.semantics { heading() })
         Text("Create a wallet or restore an existing one.", style = PyxType.body, color = PyxMuted,
             modifier = Modifier.padding(top = 6.dp))
         Spacer(Modifier.height(24.dp))
         if (restoring) {
-            words.forEachIndexed { index, word -> PyxField(
-                value = word,
-                onValueChange = { value ->
-                    currentIndex = index
-                    words = SeedRestorePresentation.edit(words, index, value)
-                },
-                modifier = Modifier.fillMaxWidth().testTag("restore_word_${index + 1}"),
-                label = { Text("Recovery word ${index + 1}") }, singleLine = true,
-                isError = validation?.invalidIndices?.contains(index) == true,
-                supportingText = { if (validation?.invalidIndices?.contains(index) == true) Text("Not a valid BIP39 word") },
-            ) }
+            // Prototype seed-grid anatomy: 2-column numbered cells with inline inputs.
+            words.chunked(2).forEachIndexed { rowIndex, pair ->
+                Row(Modifier.padding(bottom = 9.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    pair.forEachIndexed { columnIndex, word ->
+                        val index = rowIndex * 2 + columnIndex
+                        val invalid = validation?.invalidIndices?.contains(index) == true
+                        Row(
+                            Modifier.weight(1f)
+                                .heightIn(min = 48.dp)
+                                .background(PyxSurface, RoundedCornerShape(11.dp))
+                                .border(1.dp, if (invalid) PyxRed else PyxBorder, RoundedCornerShape(11.dp))
+                                .padding(horizontal = 13.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        ) {
+                            Text(
+                                "${index + 1}", style = PyxType.seedNum, color = PyxFaint,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                modifier = Modifier.widthIn(min = 17.dp),
+                            )
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = word,
+                                onValueChange = { value ->
+                                    currentIndex = index
+                                    words = SeedRestorePresentation.edit(words, index, value)
+                                },
+                                modifier = Modifier.weight(1f)
+                                    .testTag("restore_word_${index + 1}")
+                                    .semantics { contentDescription = "Recovery word ${index + 1}" },
+                                textStyle = PyxType.seedWord.copy(color = PyxText),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(PyxOrange),
+                                singleLine = true,
+                            )
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+            if (validation?.invalidIndices?.isNotEmpty() == true) Text(
+                "Not a valid BIP39 word", style = PyxType.rowSub, color = PyxRed,
+                modifier = Modifier.padding(top = 2.dp).semantics { liveRegion = LiveRegionMode.Polite },
+            )
             if (suggestions.isNotEmpty()) {
                 SectionLabel("Suggestions for word ${currentIndex + 1}")
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { suggestions.forEach { suggestion ->
@@ -462,35 +508,23 @@ private fun SeedConfirmationContent(
             modifier = Modifier.padding(top = 6.dp))
         Spacer(Modifier.height(16.dp))
         if (!reviewComplete) {
-            Surface(
-                color = PyxRed.copy(alpha = 0.07f),
-                shape = RoundedCornerShape(14.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, PyxRed.copy(alpha = 0.32f)),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Anyone with these words can take your funds. Never share them.",
-                    style = PyxType.rowSub, color = PyxText, modifier = Modifier.padding(13.dp))
-            }
+            cash.pyx.app.ui.components.SeedWarnBanner(
+                "Anyone with these 12 words can spend your funds. Write them down, store them offline, and never share or screenshot them.",
+            )
             Spacer(Modifier.height(12.dp))
-            PyxCard(padding = 16.dp) {
-                Text(
-                    state.words.mapIndexed { index, word -> "${index + 1}. $word" }.joinToString("   "),
-                    fontFamily = FontFamily.Monospace,
-                    style = PyxType.keyValue,
-                    color = PyxText,
-                )
-            }
+            cash.pyx.app.ui.components.SeedWordGrid(state.words)
             Spacer(Modifier.height(16.dp))
             PyxPrimaryButton("I've written down all 12 words", { reviewComplete = true }, Modifier.fillMaxWidth())
         } else {
             Spacer(Modifier.height(16.dp))
             Text("Verify your backup", style = PyxType.rowTitle, color = PyxText)
-            Text("Enter these words from your written copy.", style = PyxType.rowSub, color = PyxMuted)
+            Text("Enter these words from your written copy.", style = PyxType.rowSub, color = PyxMuted,
+                modifier = Modifier.padding(bottom = 8.dp))
             cash.pyx.app.security.SeedVerification.positions.forEachIndexed { answerIndex, wordIndex ->
                 PyxField(
                     value = answers[answerIndex],
                     onValueChange = { value -> answers = answers.toMutableList().also { it[answerIndex] = value.take(32) } },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                     label = { Text("Word ${wordIndex + 1}") },
                     singleLine = true,
                 )
@@ -502,6 +536,54 @@ private fun SeedConfirmationContent(
                 Modifier.fillMaxWidth(),
                 enabled = verified,
             )
+        }
+    }
+}
+
+/**
+ * Blurred stand-in for the seed grid before authentication. Renders numbered
+ * placeholder bars — never real words — under a "Tap to reveal" scrim, so no
+ * seed material exists in composition or semantics pre-auth.
+ */
+@Composable
+private fun SeedPlaceholderGrid(onReveal: () -> Unit, enabled: Boolean) {
+    Box(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.fillMaxWidth().blur(7.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            repeat(6) { rowIndex ->
+                Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    repeat(2) { columnIndex ->
+                        Surface(
+                            color = PyxSurface,
+                            shape = RoundedCornerShape(11.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, PyxBorder),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                            ) {
+                                Text("${rowIndex * 2 + columnIndex + 1}", style = PyxType.seedNum, color = PyxFaint)
+                                Box(Modifier.height(12.dp).weight(0.7f).background(PyxSurface2, RoundedCornerShape(6.dp)))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Box(
+            Modifier.matchParentSize()
+                .background(PyxBackground.copy(alpha = 0.34f), RoundedCornerShape(14.dp))
+                .clickable(enabled = enabled, onClickLabel = "Show recovery words") { onReveal() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(PyxIcons.Eye, contentDescription = null, tint = PyxOrange, modifier = Modifier.size(24.dp))
+                Text("Tap to reveal", style = PyxType.rowSub.copy(fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = PyxText)
+            }
         }
     }
 }
@@ -569,14 +651,12 @@ private fun HomeContent(
     val balanceSemantics = if (balanceMasked) "Balance hidden" else "Balance $balanceText"
     // One text node whose full string stays exactly `balanceText`, with the
     // trailing unit rendered smaller and muted like the prototype amount.
-    val styledBalance = buildAnnotatedString {
-        val unitStart = balanceText.lastIndexOf(" sat")
-        if (balanceMasked || unitStart <= 0) append(balanceText)
-        else {
-            withStyle(SpanStyle(fontSize = 31.sp)) { append(balanceText.substring(0, unitStart)) }
-            withStyle(SpanStyle(fontSize = 15.sp, color = PyxMuted)) { append(balanceText.substring(unitStart)) }
-        }
-    }
+    val styledBalance = if (balanceMasked) AnnotatedString(balanceText)
+    else cash.pyx.app.ui.components.satAmountAnnotated(
+        balanceText,
+        unitStyle = SpanStyle(fontSize = 15.sp, color = PyxMuted),
+        numberStyle = SpanStyle(fontSize = 31.sp),
+    )
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize().testTag("wallet_home"),
@@ -696,12 +776,9 @@ private fun HomeContent(
                 }
                 activityState.payments.isEmpty() -> item(key = "activity_empty") {
                     Column(Modifier.fillMaxWidth().padding(top = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            Modifier.size(54.dp).background(PyxSurface2, RoundedCornerShape(16.dp)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(PyxIcons.Transfers, contentDescription = null, tint = PyxMuted, modifier = Modifier.size(22.dp))
-                        }
+                        cash.pyx.app.ui.components.IconTile(
+                            PyxIcons.Transfers, tint = PyxMuted, size = 54.dp, cornerRadius = 16.dp, iconSize = 22.dp,
+                        )
                         Text("No transaction history yet", style = PyxType.rowTitle, color = PyxMuted,
                             modifier = Modifier.padding(top = 14.dp))
                     }
@@ -802,6 +879,7 @@ private fun ManageContent(
     openSeedBackup: () -> Unit,
     openCurrency: () -> Unit,
     openGuardians: () -> Unit,
+    openDetails: () -> Unit,
     submit: (String, Long, String, Long) -> Unit,
     clear: () -> Unit,
     biometricAvailable: Boolean,
@@ -827,38 +905,89 @@ private fun ManageContent(
     val selected = state.snapshot.selected
     val operationModalRoute = if (operation is WalletOperation.SuccessorInvite) WalletModalRoute.SUCCESSOR_REVIEW else null
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
-        PyxTopBar(screen.title, onBack = { clear(); back() }, titleSemantics = Modifier.semantics { heading() })
+        PyxTopBar(
+            screen.title,
+            onBack = { clear(); back() },
+            titleSemantics = Modifier.semantics { heading() },
+            actions = {
+                if (screen == WalletRoute.WALLETS) PyxIconButton(
+                    PyxIcons.Plus, onClick = openJoin,
+                    modifier = Modifier.semantics { text = AnnotatedString("Add a wallet") },
+                )
+            },
+        )
         when (screen) {
             WalletRoute.WALLETS -> {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    state.snapshot.federations.forEach { federation ->
-                        val active = federation.id == selected?.federationId
-                        PyxCard(padding = 0.dp) {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable(enabled = !active) { submit("switch", state.factoryHandle, federation.id, 0) }
-                                    .padding(15.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                InitialAvatar(federation.name)
-                                Column(Modifier.weight(1f)) {
-                                    Text(federation.name, style = PyxType.rowTitle, color = PyxText)
-                                    Text("${federation.guardianCount} guardians", style = PyxType.rowSub, color = PyxMuted)
+                Text(
+                    "Switch between your wallets. Each wallet is held by a federation — you can keep several with the same provider.",
+                    style = PyxType.rowSub, color = PyxMuted,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 4.dp),
+                )
+                state.snapshot.federations.forEach { federation ->
+                    val active = federation.id == selected?.federationId
+                    // Federation group header: avatar, name, status (known for the
+                    // selected federation only), chevron into federation details.
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clickable(enabled = active, onClickLabel = "Federation details") { openDetails() }
+                            .padding(top = 18.dp, bottom = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    ) {
+                        InitialAvatar(federation.name, size = 26.dp)
+                        Text(federation.name, style = PyxType.rowSub.copy(fontFamily = PyxType.keyValue.fontFamily, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = PyxText)
+                        if (active && connection != null) Text(
+                            if (connection.onlineCount >= connection.requiredCount) "Online" else "Offline",
+                            style = PyxType.sectionLabel.copy(letterSpacing = 0.02.em),
+                            color = if (connection.onlineCount >= connection.requiredCount) PyxGreen else cash.pyx.app.ui.theme.PyxBurnt,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (active) Icon(PyxIcons.ChevronRight, contentDescription = null, tint = PyxFaint, modifier = Modifier.size(16.dp))
+                    }
+                    Surface(
+                        color = PyxSurface,
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (active) PyxOrange else PyxBorder),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable(enabled = !active, onClickLabel = "Switch to ${federation.name}") {
+                                    submit("switch", state.factoryHandle, federation.id, 0)
                                 }
-                                if (active) Icon(PyxIcons.Check, contentDescription = null, tint = PyxOrange, modifier = Modifier.size(20.dp))
-                                else PyxTextLink("Switch", { submit("switch", state.factoryHandle, federation.id, 0) })
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(13.dp),
+                        ) {
+                            cash.pyx.app.ui.components.IconTile(
+                                PyxIcons.Wallet, tint = PyxOrange, size = 42.dp, cornerRadius = 12.dp, iconSize = 21.dp,
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(federation.name, style = PyxType.rowTitle, color = PyxText)
+                                Text(
+                                    // Only the selected wallet's balance is known natively.
+                                    if (active && selected != null) HomePresentation.balanceText(selected.balanceSat, false)
+                                    else "${federation.guardianCount} guardians",
+                                    style = PyxType.rowSub, color = PyxMuted,
+                                    modifier = Modifier.padding(top = 3.dp),
+                                )
                             }
+                            if (active) Box(
+                                Modifier.size(24.dp).background(PyxOrange, androidx.compose.foundation.shape.CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(PyxIcons.Check, contentDescription = "Active wallet", tint = cash.pyx.app.ui.theme.PyxOnOrange, modifier = Modifier.size(15.dp))
+                            } else Icon(PyxIcons.ChevronRight, contentDescription = null, tint = PyxFaint, modifier = Modifier.size(18.dp))
                         }
                     }
-                    PyxGhostButton("Add federation", openJoin, Modifier.fillMaxWidth())
                 }
             }
             WalletRoute.DETAILS -> {
                 selected?.let { wallet ->
-                    Box(Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                        InitialAvatar(wallet.name, size = 88.dp)
+                    Box(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 24.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.border(1.dp, PyxBorder, androidx.compose.foundation.shape.CircleShape).padding(1.dp)) {
+                            InitialAvatar(wallet.name, size = 122.dp)
+                        }
                     }
                 }
                 PyxCard(padding = 0.dp) {
@@ -881,7 +1010,27 @@ private fun ManageContent(
                         )
                     }
                 }
-                PyxTextLink("Load federation details", { selected?.let { submit("details_connection", it.clientHandle, "", 0) } })
+                // Prototype loads details on navigation, not behind a link.
+                LaunchedEffect(selected?.clientHandle) {
+                    selected?.let { submit("details_connection", it.clientHandle, "", 0) }
+                }
+                SectionLabel("Modules")
+                Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    // Joining validates exactly these module kinds, so the pills are accurate
+                    // for any joined federation even though the API doesn't list modules.
+                    listOf("On-Chain" to PyxIcons.Link, "Ecash" to PyxIcons.Transfers, "Lightning" to PyxIcons.Zap).forEach { (label, icon) ->
+                        Row(
+                            Modifier.background(PyxSurface, RoundedCornerShape(11.dp))
+                                .border(1.dp, PyxBorder, RoundedCornerShape(11.dp))
+                                .padding(start = 11.dp, end = 13.dp, top = 9.dp, bottom = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        ) {
+                            Icon(icon, contentDescription = null, tint = PyxOrange, modifier = Modifier.size(17.dp))
+                            Text(label, style = PyxType.rowSub.copy(fontSize = 13.5.sp), color = PyxText)
+                        }
+                    }
+                }
                 when (federationState) {
                     is cash.pyx.app.data.FederationState.Selecting -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = PyxOrange, trackColor = PyxSurface2)
                     is cash.pyx.app.data.FederationState.Failed -> Text(
@@ -945,46 +1094,58 @@ private fun ManageContent(
             }
             WalletRoute.GUARDIANS -> {
                 connection?.let { status ->
-                    Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "${status.state.name.lowercase().replaceFirstChar(Char::uppercase)} · ${status.onlineCount}/${status.totalCount} online",
-                            style = PyxType.rowTitle, color = PyxText, modifier = Modifier.weight(1f),
-                        )
-                        Text("Quorum ${status.requiredCount} of ${status.totalCount}", style = PyxType.rowSub, color = PyxMuted)
-                    }
+                    Text(
+                        "${status.onlineCount} / ${status.totalCount} online",
+                        style = PyxType.rowSub.copy(fontSize = 13.sp), color = PyxFaint,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 18.dp),
+                    )
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         status.guardians.forEach { guardian ->
                             PyxCard(padding = 0.dp) {
                                 Row(
-                                    Modifier.fillMaxWidth().padding(13.dp),
+                                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(13.dp),
                                 ) {
-                                    InitialAvatar(guardian.name)
+                                    InitialAvatar(guardian.name, size = 42.dp)
                                     Column(Modifier.weight(1f)) {
                                         Text(guardian.name, style = PyxType.rowTitle, color = PyxText)
                                         Text(
                                             if (guardian.connected) "Online" else "Offline",
                                             style = PyxType.rowSub,
-                                            color = if (guardian.connected) PyxGreen else PyxRed,
+                                            color = if (guardian.connected) PyxGreen else cash.pyx.app.ui.theme.PyxBurnt,
+                                            modifier = Modifier.padding(top = 3.dp),
                                         )
                                     }
-                                    StatusDot(if (guardian.connected) PyxGreen else PyxRed)
+                                    StatusDot(if (guardian.connected) PyxGreen else cash.pyx.app.ui.theme.PyxBurnt)
                                 }
                             }
                         }
                     }
+                    Text(
+                        "Quorum required: ${status.requiredCount} of ${status.totalCount}",
+                        style = PyxType.rowSub.copy(fontSize = 13.sp, letterSpacing = 0.04.em), color = PyxFaint,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                    )
                 } ?: Text("Guardian connection status is unavailable.", style = PyxType.body, color = PyxMuted)
             }
             WalletRoute.SETTINGS -> {
                 SectionLabel("Wallet")
                 PyxCard(padding = 0.dp) {
                     Column(Modifier.padding(horizontal = 15.dp)) {
-                        CardRow("Wallets", value = "${state.snapshot.federations.size}", chevron = true, onClick = openWallets)
+                        CardRow(
+                            "Wallets",
+                            value = selected?.let { "${state.snapshot.federations.size} · ${it.name}" } ?: "${state.snapshot.federations.size}",
+                            valueStyle = PyxType.settingsValue, valueColor = PyxFaint,
+                            chevron = true, onClick = openWallets,
+                        )
                         PyxDivider()
-                        CardRow("Currency", value = state.snapshot.currencyCode, chevron = true, onClick = openCurrency)
+                        CardRow("Default Currency", value = "SATS · ${state.snapshot.currencyCode}",
+                            valueStyle = PyxType.settingsValue, valueColor = PyxFaint, chevron = true, onClick = openCurrency)
                         PyxDivider()
-                        CardRow("Recovery words", chevron = true, onClick = openSeedBackup)
+                        CardRow("Backup", value = "Recovery words",
+                            valueStyle = PyxType.settingsValue, valueColor = PyxFaint, chevron = true, onClick = openSeedBackup)
                         PyxDivider()
                         CardRow("Manage contacts", chevron = true, onClick = openContacts)
                     }
@@ -992,17 +1153,17 @@ private fun ManageContent(
                 SectionLabel("Security")
                 PyxCard(padding = 0.dp) {
                     Column(Modifier.padding(horizontal = 15.dp)) {
-                        CardRow("Biometric protection", subtitle = "Configure access protection", chevron = true, onClick = openAccess)
+                        CardRow("Access Control", value = if (biometricEnabled) "Biometrics" else "Off",
+                            valueStyle = PyxType.settingsValue, valueColor = PyxFaint, chevron = true, onClick = openAccess)
                     }
                 }
                 SectionLabel("About")
                 PyxCard(padding = 0.dp) {
                     Column(Modifier.padding(horizontal = 15.dp)) {
-                        CardRow("Network", value = "Bitcoin")
+                        CardRow("Network", value = "Bitcoin", valueStyle = PyxType.settingsValue, valueColor = PyxFaint, chevron = true)
                         PyxDivider()
-                        CardRow("Version", value = "${cash.pyx.app.BuildConfig.VERSION_NAME} (${cash.pyx.app.BuildConfig.VERSION_CODE})")
-                        PyxDivider()
-                        CardRow("Build type", value = cash.pyx.app.BuildConfig.BUILD_TYPE)
+                        CardRow("Version", value = "Pyx ${cash.pyx.app.BuildConfig.VERSION_NAME} (${cash.pyx.app.BuildConfig.VERSION_CODE})",
+                            valueStyle = PyxType.settingsValue, valueColor = PyxFaint, chevron = true)
                     }
                 }
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
@@ -1012,45 +1173,59 @@ private fun ManageContent(
             }
             WalletRoute.CURRENCY -> {
                 LaunchedEffect(Unit) { submit("load_currencies", 0, "", 0) }
-                PyxField(value = input, onValueChange = { input = it.take(32) }, modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Search currencies") }, singleLine = true)
+                CurrencySearchField(input) { input = it.take(32) }
                 if (currencySettingsState.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp), color = PyxOrange, trackColor = PyxSurface2)
                 FeatureMessageContent(currencySettingsState.message, clearCurrencyMessage)
-                Spacer(Modifier.height(12.dp))
-                PyxCard(padding = 0.dp) {
-                    Column(Modifier.padding(horizontal = 15.dp)) {
-                        val visible = currencySettingsState.currencies
-                            .filter { input.isBlank() || it.code.contains(input, true) || it.name.contains(input, true) }
-                            .take(12)
-                        visible.forEachIndexed { index, currency ->
-                            CardRow(
-                                title = currency.code,
-                                subtitle = currency.name,
-                                value = currency.symbol,
-                                onClick = { submit("currency", state.factoryHandle, currency.code, 0) },
-                                enabled = currencySettingsState.savingCode == null,
-                                trailing = {
-                                    when {
-                                        currencySettingsState.savingCode == currency.code ->
-                                            CircularProgressIndicator(Modifier.size(20.dp), color = PyxOrange)
-                                        currency.code == state.snapshot.currencyCode ->
-                                            Icon(PyxIcons.Check, contentDescription = null, tint = PyxOrange, modifier = Modifier.size(18.dp))
-                                    }
-                                },
-                            )
-                            if (index != visible.lastIndex) PyxDivider()
-                        }
+                Spacer(Modifier.height(10.dp))
+                val sections = CurrencyPickerPresentation.sections(input, currencySettingsState.currencies, includeBtcUnits = false)
+                if (sections.empty && currencySettingsState.currencies.isNotEmpty()) Text(
+                    "No currency matches \"$input\"",
+                    style = PyxType.rowSub.copy(fontSize = 13.sp), color = PyxFaint,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                )
+                else Column {
+                    sections.fiat.forEach { currency ->
+                        CurrencyRow(
+                            CurrencyPickerPresentation.flag(currency.code, currency.symbol),
+                            currency.code, currency.name,
+                            active = currency.code == state.snapshot.currencyCode,
+                            saving = currencySettingsState.savingCode == currency.code,
+                            enabled = currencySettingsState.savingCode == null,
+                        ) { submit("currency", state.factoryHandle, currency.code, 0) }
                     }
                 }
             }
             WalletRoute.ACCESS -> {
                 Text(SettingsPresentation.biometricMessage(biometricAvailable, biometricEnabled), style = PyxType.body, color = PyxMuted,
-                    modifier = Modifier.padding(bottom = 12.dp))
+                    modifier = Modifier.padding(bottom = 18.dp))
+                SectionLabel("Method")
+                PyxCard(padding = 0.dp) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        cash.pyx.app.ui.components.IconTile(
+                            PyxIcons.Fingerprint, tint = PyxOrange, size = 42.dp, cornerRadius = 12.dp, iconSize = 21.dp,
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text("Device biometrics", style = PyxType.rowTitle, color = PyxText)
+                            Text("Fingerprint · face unlock", style = PyxType.rowSub, color = PyxMuted)
+                        }
+                        val (statusText, statusColor) = when {
+                            biometricEnabled && biometricAvailable -> "Active" to PyxGreen
+                            biometricEnabled -> "Unavailable" to PyxRed
+                            else -> "Off" to PyxMuted
+                        }
+                        Text(statusText, style = PyxType.rowSub.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = statusColor)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
                 PyxCard(padding = 0.dp) {
                     Column(Modifier.padding(horizontal = 15.dp)) {
                         CardRow(
                             "Biometric protection",
-                            subtitle = "Require a strong biometric before protected actions",
                             trailing = {
                                 Switch(
                                     checked = biometricEnabled, onCheckedChange = onBiometricToggle,
@@ -1065,33 +1240,44 @@ private fun ManageContent(
                         )
                     }
                 }
+                Spacer(Modifier.height(18.dp))
+                Surface(color = PyxSurface2, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+                        Icon(PyxIcons.Info, contentDescription = null, tint = PyxMuted, modifier = Modifier.size(20.dp))
+                        Text(
+                            "App PIN and password unlock are not available — a strong device biometric protects payments, ecash creation, federation removal, and recovery words.",
+                            style = PyxType.rowSub, color = PyxMuted,
+                        )
+                    }
+                }
             }
             WalletRoute.SEED_BACKUP -> {
-                Surface(
-                    color = PyxRed.copy(alpha = 0.07f),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, PyxRed.copy(alpha = 0.32f)),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        "Your recovery words restore this wallet. Keep them private and offline.",
-                        style = PyxType.body, color = PyxText, modifier = Modifier.padding(15.dp),
+                cash.pyx.app.ui.components.SeedWarnBanner(
+                    "Anyone with these 12 words can spend your funds. Write them down, store them offline, and never share or screenshot them.",
+                    Modifier.padding(bottom = 20.dp),
+                )
+                if (!(operation is WalletOperation.Success && operation.sensitive)) {
+                    SeedPlaceholderGrid(
+                        onReveal = { onBackup(state.factoryHandle) },
+                        enabled = operation !is WalletOperation.Submitting,
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    PyxPrimaryButton(
+                        "Show recovery words",
+                        { onBackup(state.factoryHandle) },
+                        Modifier.fillMaxWidth(),
+                        enabled = operation !is WalletOperation.Submitting,
                     )
                 }
-                Spacer(Modifier.height(16.dp))
-                PyxPrimaryButton(
-                    "Show recovery words",
-                    { onBackup(state.factoryHandle) },
-                    Modifier.fillMaxWidth(),
-                    enabled = operation !is WalletOperation.Submitting,
-                )
             }
             WalletRoute.CONTACTS -> {
                 val contacts = contactsState.contacts
                 var name by remember { mutableStateOf("") }
                 var lnurl by remember { mutableStateOf("") }
                 var query by remember { mutableStateOf("") }
+                var showForm by remember { mutableStateOf(false) }
                 var editing by remember { mutableStateOf<cash.pyx.app.nativeapi.Contact?>(null) }
+                var viewing by remember { mutableStateOf<cash.pyx.app.nativeapi.Contact?>(null) }
                 var delete by remember { mutableStateOf<cash.pyx.app.nativeapi.Contact?>(null) }
                 var contactModalRoute by remember { mutableStateOf<WalletModalRoute?>(null) }
                 var showValidation by remember { mutableStateOf(false) }
@@ -1100,6 +1286,7 @@ private fun ManageContent(
                 FeatureMessageContent(contactsState.message, clearContactsMessage)
                 val validation = ContactsPresentation.validate(name, lnurl, contacts, editing?.lnurl)
                 PyxField(query, { query = it.take(256) }, Modifier.fillMaxWidth(), label = { Text("Search contacts") }, singleLine = true)
+                if (showForm) {
                 SectionLabel(if (editing == null) "Add contact" else "Edit contact")
                 PyxField(name, { name = it.take(128); showValidation = true }, Modifier.fillMaxWidth(), label = { Text("Name") },
                     isError = showValidation && validation.nameError != null,
@@ -1116,36 +1303,66 @@ private fun ManageContent(
                         showValidation = true
                         if (validation.valid) {
                             submit("save_contact", state.factoryHandle, "${name.trim()}\u0000${lnurl.trim()}", 0)
-                            editing = null; name = ""; lnurl = ""; showValidation = false
+                            showForm = false; editing = null; name = ""; lnurl = ""; showValidation = false
                         }
                     })
-                    if (editing != null) PyxTextLink("Cancel", { editing = null; name = ""; lnurl = ""; showValidation = false })
+                    PyxTextLink("Cancel", { showForm = false; editing = null; name = ""; lnurl = ""; showValidation = false })
+                }
                 }
                 val visibleContacts = ContactsPresentation.filter(contacts, query)
                 SectionLabel("Contacts")
-                if (contacts.isEmpty()) Text("No contacts yet", style = PyxType.body, color = PyxMuted)
-                else if (visibleContacts.isEmpty()) Text("No contacts match your search", style = PyxType.body, color = PyxMuted)
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    visibleContacts.forEach { contact ->
-                        PyxCard(padding = 0.dp) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                InitialAvatar(contact.name, size = 36.dp)
-                                Column(Modifier.weight(1f)) {
-                                    Text(contact.name, style = PyxType.rowTitle, color = PyxText)
-                                    Text(contact.lnurl, style = PyxType.rowSub, color = PyxMuted, maxLines = 1)
+                when {
+                    contacts.isEmpty() -> Column(
+                        Modifier.fillMaxWidth().padding(vertical = 26.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text("No contacts yet", style = PyxType.rowTitle, color = PyxMuted)
+                        Text("Save a Lightning address to pay it again quickly", style = PyxType.rowSub, color = PyxFaint,
+                            modifier = Modifier.padding(top = 4.dp))
+                    }
+                    visibleContacts.isEmpty() -> Text(
+                        "No contacts match your search", style = PyxType.rowSub, color = PyxFaint,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    )
+                    else -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        visibleContacts.forEach { contact ->
+                            PyxCard(padding = 0.dp) {
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .clickable(onClickLabel = "Contact details") { viewing = contact }
+                                        .padding(15.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    InitialAvatar(contact.name, size = 40.dp)
+                                    Column(Modifier.weight(1f)) {
+                                        Text(contact.name, style = PyxType.rowTitle, color = PyxText)
+                                        Text(contact.lnurl, style = PyxType.inputMono.copy(fontSize = 13.sp), color = PyxMuted,
+                                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    }
+                                    Icon(PyxIcons.ChevronRight, contentDescription = null, tint = PyxFaint, modifier = Modifier.size(18.dp))
                                 }
-                                PyxTextLink("Pay", { sendContact(contact.lnurl) })
-                                PyxTextLink("Edit", { editing = contact; name = contact.name; lnurl = contact.lnurl; showValidation = false },
-                                    enabled = contactsState.mutation == null)
-                                PyxTextLink("Delete", { delete = contact; contactModalRoute = WalletModalRoute.CONTACT_DELETE },
-                                    enabled = contactsState.mutation == null)
                             }
                         }
                     }
+                }
+                if (!showForm) PyxGhostButton(
+                    "Add contact", { showForm = true; editing = null; name = ""; lnurl = ""; showValidation = false },
+                    Modifier.fillMaxWidth().padding(top = 12.dp), icon = PyxIcons.Plus,
+                )
+                viewing?.let { contact ->
+                    ContactDetailSheet(
+                        contact = contact,
+                        mutationLocked = contactsState.mutation != null,
+                        onPay = { viewing = null; sendContact(contact.lnurl) },
+                        onEdit = {
+                            viewing = null; showForm = true; editing = contact
+                            name = contact.name; lnurl = contact.lnurl; showValidation = false
+                        },
+                        onDelete = { viewing = null; delete = contact; contactModalRoute = WalletModalRoute.CONTACT_DELETE },
+                        dismiss = { viewing = null },
+                    )
                 }
                 if (contactModalRoute == WalletModalRoute.CONTACT_DELETE && delete != null) AlertDialog(onDismissRequest = { delete = null; contactModalRoute = null }, title = { Text("Delete contact?") },
                     text = { Text("Remove ${delete!!.name}? This does not send or move any funds.") },
@@ -1154,27 +1371,55 @@ private fun ManageContent(
             }
             WalletRoute.ADDRESSES -> {
                 LaunchedEffect(selected?.clientHandle) { selected?.let { submit("load_addresses", it.clientHandle, "", 0) } }
-                if (addresses.isEmpty()) Text("No on-chain addresses", style = PyxType.body, color = PyxMuted)
+                val addressContext = androidx.compose.ui.platform.LocalContext.current
+                var copyAnnouncement by remember { mutableStateOf<String?>(null) }
+                val currentTweak = addresses.maxByOrNull { it.tweakIndex }?.tweakIndex
+                if (addresses.isEmpty()) Column(
+                    Modifier.fillMaxWidth().padding(vertical = 26.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(PyxIcons.QrGlyph, contentDescription = null, tint = PyxFaint.copy(alpha = 0.55f), modifier = Modifier.size(48.dp))
+                    Text("No on-chain addresses yet", style = PyxType.rowSub, color = PyxMuted, modifier = Modifier.padding(top = 12.dp))
+                }
                 else PyxCard(padding = 0.dp) {
                     Column(Modifier.padding(horizontal = 15.dp)) {
                         addresses.forEachIndexed { index, address ->
-                            CardRow(
-                                title = address.address.take(18) + "…",
-                                subtitle = "Index ${address.tweakIndex}",
-                                trailing = {
-                                    PyxTextLink("Recheck", {
-                                        selected?.let { wallet ->
-                                            if (addressMutationGate.request { submit("recheck_address", wallet.clientHandle, "", address.tweakIndex) }) {
-                                                confirmationRoute = WalletModalRoute.ADDRESS_MUTATION
-                                            }
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .clickable(onClickLabel = "Copy address") {
+                                        copyAnnouncement = QrPayload.copy(addressContext, "On-chain address", address.address, sensitive = false).announcement
+                                    }
+                                    .padding(vertical = 13.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                cash.pyx.app.ui.components.IconTile(
+                                    PyxIcons.Link, tint = PyxMuted, size = 38.dp, cornerRadius = 11.dp, iconSize = 18.dp,
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(address.address, style = PyxType.inputMono.copy(fontSize = 13.sp), color = PyxText,
+                                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    Text(
+                                        if (address.tweakIndex == currentTweak) "Index ${address.tweakIndex} · Shown on Receive"
+                                        else "Index ${address.tweakIndex}",
+                                        style = PyxType.rowSub, color = PyxFaint,
+                                    )
+                                }
+                                Icon(PyxIcons.Copy, contentDescription = null, tint = PyxMuted, modifier = Modifier.size(14.dp))
+                                PyxTextLink("Recheck", {
+                                    selected?.let { wallet ->
+                                        if (addressMutationGate.request { submit("recheck_address", wallet.clientHandle, "", address.tweakIndex) }) {
+                                            confirmationRoute = WalletModalRoute.ADDRESS_MUTATION
                                         }
-                                    })
-                                },
-                            )
+                                    }
+                                })
+                            }
                             if (index != addresses.lastIndex) PyxDivider()
                         }
                     }
                 }
+                cash.pyx.app.ui.components.AnnouncementText(copyAnnouncement, Modifier.padding(top = 6.dp))
                 Spacer(Modifier.height(12.dp))
                 PyxPrimaryButton(
                     if (addresses.isEmpty()) "Generate address" else "Generate another address",
@@ -1251,19 +1496,8 @@ private fun FeatureMessageContent(message: cash.pyx.app.data.FeatureMessage?, cl
 @Composable
 private fun PaymentDetailSheet(detail: ActivityDetailState, masked: Boolean, dismiss: () -> Unit) {
     if (detail is ActivityDetailState.Closed) return
-    ModalBottomSheet(
-        onDismissRequest = dismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = PyxSurface,
-        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
-        scrimColor = Color(0xFF040609).copy(alpha = 0.55f),
-        dragHandle = {
-            Box(
-                Modifier.padding(top = 6.dp, bottom = 10.dp)
-                    .size(width = 40.dp, height = 4.dp)
-                    .background(cash.pyx.app.ui.theme.PyxBorderStrong, RoundedCornerShape(2.dp)),
-            )
-        },
+    cash.pyx.app.ui.components.PyxSheet(
+        onDismiss = dismiss,
         modifier = Modifier.testTag("payment_detail_sheet"),
     ) {
         when (detail) {
@@ -1308,17 +1542,9 @@ private fun PaymentDetailSheetContent(payment: Payment, masked: Boolean) {
                 },
             )
             Column(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    Modifier.size(54.dp).background(PyxSurface2, RoundedCornerShape(16.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        if (incoming) PyxIcons.ArrowDown else PyxIcons.ArrowUp,
-                        contentDescription = null,
-                        tint = if (incoming) PyxGreen else PyxMuted,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
+                cash.pyx.app.ui.components.IconTile(
+                    if (incoming) PyxIcons.ArrowDown else PyxIcons.ArrowUp, tint = if (incoming) PyxGreen else PyxMuted, size = 54.dp, cornerRadius = 16.dp, iconSize = 22.dp,
+                )
                 Text(
                     "${paymentTypeLabel(payment.type)} ${if (incoming) "received" else "sent"}",
                     style = PyxType.centeredTitle, color = PyxText, modifier = Modifier.padding(top = 12.dp),
@@ -1326,14 +1552,9 @@ private fun PaymentDetailSheetContent(payment: Payment, masked: Boolean) {
                 // One text node whose full string stays the amount exactly, with the
                 // trailing unit rendered small and muted like the prototype big-amt.
                 val amountText = if (masked) "•••" else ActivityPresentation.amount(payment)
-                val styledAmount = buildAnnotatedString {
-                    val unitStart = amountText.lastIndexOf(" sat")
-                    if (unitStart <= 0) append(amountText)
-                    else {
-                        append(amountText.substring(0, unitStart))
-                        withStyle(SpanStyle(fontSize = 16.sp, color = PyxMuted)) { append(amountText.substring(unitStart)) }
-                    }
-                }
+                val styledAmount = cash.pyx.app.ui.components.satAmountAnnotated(
+                    amountText, unitStyle = SpanStyle(fontSize = 16.sp, color = PyxMuted),
+                )
                 Text(
                     styledAmount,
                     style = PyxType.bigAmount,
@@ -1387,10 +1608,46 @@ private fun PaymentDetailSheetContent(payment: Payment, masked: Boolean) {
                     announcement = QrPayload.copy(context, "Operation ID", payment.operationId, sensitive = false).announcement
                 }
             } }
-            announcement?.let {
-                Text(it, style = PyxType.rowSub, color = PyxMuted,
-                    modifier = Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite })
+            cash.pyx.app.ui.components.AnnouncementText(announcement, Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+/** Contact bottom sheet: avatar head, copyable address drow, then Pay / Edit / Delete actions. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ContactDetailSheet(
+    contact: cash.pyx.app.nativeapi.Contact,
+    mutationLocked: Boolean,
+    onPay: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    dismiss: () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var announcement by remember(contact.lnurl) { mutableStateOf<String?>(null) }
+    cash.pyx.app.ui.components.PyxSheet(
+        onDismiss = dismiss,
+        modifier = Modifier.testTag("contact_detail_sheet"),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 30.dp)) {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                InitialAvatar(contact.name, size = 54.dp)
+                Text(contact.name, style = PyxType.centeredTitle, color = PyxText, modifier = Modifier.padding(top = 10.dp))
             }
+            Spacer(Modifier.height(16.dp))
+            PyxCard(padding = 0.dp) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
+                    DetailSheetRow("Lightning address", contact.lnurl, mono = true) {
+                        announcement = QrPayload.copy(context, "Lightning address", contact.lnurl, sensitive = false).announcement
+                    }
+                }
+            }
+            cash.pyx.app.ui.components.AnnouncementText(announcement, Modifier.padding(top = 6.dp))
+            Spacer(Modifier.height(16.dp))
+            PyxPrimaryButton("Pay", onPay, Modifier.fillMaxWidth())
+            PyxGhostButton("Edit name", onEdit, Modifier.fillMaxWidth().padding(top = 10.dp), enabled = !mutationLocked)
+            PyxGhostButton("Delete contact", onDelete, Modifier.fillMaxWidth().padding(top = 10.dp), enabled = !mutationLocked, textColor = PyxRed)
         }
     }
 }
@@ -1442,6 +1699,7 @@ private fun JoinContent(
     var invite by remember(queuedInvite) { mutableStateOf(queuedInvite.orEmpty()) }
     var recover by remember { mutableStateOf(initialRecover) }
     var modalRoute by remember { mutableStateOf<WalletModalRoute?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(
         Modifier
             .fillMaxSize()
@@ -1449,27 +1707,36 @@ private fun JoinContent(
             .padding(vertical = 12.dp),
     ) {
         PyxTopBar(if (recover) "Recover federation" else "Join federation", onBack = { invite = ""; back() })
-        SectionLabel("Federation invite")
+        PyxSegmented(
+            listOf("Join new", "Recover existing"),
+            if (recover) 1 else 0,
+            { index -> recover = index == 1 },
+        )
+        Spacer(Modifier.height(16.dp))
+        if (invite.isBlank()) {
+            // Scan-first, like the prototype's "Scan a federation invite" sheet.
+            cash.pyx.app.ui.components.ScanPromptFrame("Scan a federation invite", onClickLabel = "Scan a federation invite", onClick = scan)
+            Spacer(Modifier.height(16.dp))
+            PyxGhostButton(
+                "Paste from clipboard",
+                {
+                    val clip = (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                        .primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
+                    if (!clip.isNullOrBlank() && clip.length <= 16 * 1024) invite = clip
+                },
+                Modifier.fillMaxWidth(),
+                icon = PyxIcons.Copy,
+            )
+            Spacer(Modifier.height(8.dp))
+        } else PyxTextLink("Scan a different code", scan)
         PyxField(
             value = invite,
             onValueChange = { if (it.length <= 16 * 1024) invite = it },
             modifier = Modifier.fillMaxWidth().testTag("federation_invite"),
-            label = { Text("Federation invite") },
-            minLines = 3,
+            label = { Text("Or paste a federation invite") },
+            minLines = 2,
         )
-        PyxTextLink("Scan invite QR", scan)
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-            Switch(
-                checked = recover, onCheckedChange = { recover = it },
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = PyxOrange, checkedThumbColor = PyxSurface,
-                    uncheckedTrackColor = PyxSurface2, uncheckedThumbColor = PyxMuted,
-                    uncheckedBorderColor = PyxBorder,
-                ),
-            )
-            Text(if (recover) "Recover an existing wallet" else "Join as a new wallet",
-                style = PyxType.body, color = PyxText, modifier = Modifier.padding(start = 10.dp))
-        }
+        Spacer(Modifier.height(16.dp))
         PyxPrimaryButton(
             if (operation is WalletOperation.Submitting) "Working…" else "Continue",
             { modalRoute = WalletModalRoute.JOIN_CONFIRMATION },
@@ -1477,10 +1744,20 @@ private fun JoinContent(
             enabled = invite.isNotBlank() && operation !is WalletOperation.Submitting,
         )
         if (operation is WalletOperation.Failure) Text(operation.message, style = PyxType.body, color = PyxRed,
-            modifier = Modifier.padding(top = 10.dp))
+            modifier = Modifier.padding(top = 10.dp).semantics { liveRegion = LiveRegionMode.Assertive })
     }
     if (modalRoute == WalletModalRoute.JOIN_CONFIRMATION) AlertDialog(onDismissRequest = { modalRoute = null }, title = { Text(if (recover) "Confirm recovery" else "Confirm join") },
-        text = { Text("Only continue if you trust the federation invite source.") },
+        text = { Column {
+            Text(
+                if (recover) "Recover an existing wallet — this restores history and may take a while."
+                else "Join as a new wallet. Only continue if you trust the federation invite source.",
+            )
+            Text(
+                invite.take(40) + if (invite.length > 40) "…" else "",
+                style = PyxType.inputMono.copy(fontSize = 13.sp), color = PyxMuted,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        } },
         // Preserve the invite after retryable/offline failures so retry does not require
         // rescanning or re-entering a potentially long value.
         confirmButton = { Button(onClick = { modalRoute = null; join(factoryHandle, invite, recover) }) { Text("Confirm") } },
@@ -1492,38 +1769,42 @@ private fun SensitiveResult(result: WalletOperation.Success, secure: Boolean, di
     val context = androidx.compose.ui.platform.LocalContext.current
     var modalRoute by remember { mutableStateOf<WalletModalRoute?>(null) }
     var copyAnnouncement by remember { mutableStateOf<String?>(null) }
-    DisposableEffect(secure) {
-        val window = context.findActivity()?.window
-        if (secure) window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose { if (secure) window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
-    }
+    if (secure) SecureScreen()
     PyxCard(Modifier.padding(top = 16.dp), padding = 16.dp) {
         Text(result.title, style = PyxType.rowTitle, color = PyxText)
         Spacer(Modifier.height(8.dp))
-        if (secure) Surface(
-            color = PyxRed.copy(alpha = 0.07f),
-            shape = RoundedCornerShape(12.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, PyxRed.copy(alpha = 0.32f)),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(result.detail, style = PyxType.keyValue, color = PyxText, modifier = Modifier.padding(13.dp))
-        } else SelectionContainer { Text(result.detail, style = PyxType.inputMono, color = PyxText) }
+        when {
+            secure && result.title == "Recovery words" ->
+                cash.pyx.app.ui.components.SeedWordGrid(result.detail.split(' '))
+            secure -> Surface(
+                color = PyxRed.copy(alpha = 0.07f),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, PyxRed.copy(alpha = 0.32f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(result.detail, style = PyxType.keyValue, color = PyxText, modifier = Modifier.padding(13.dp))
+            }
+            else -> SelectionContainer { Text(result.detail, style = PyxType.inputMono, color = PyxText) }
+        }
         if (!secure) Row {
             ClipboardCopyButton(context, result.title, result.detail, sensitive = false, buttonLabel = "Copy")
             if (result.shareable && PlatformUtilityPolicy.canShare(result.sensitive)) PyxTextLink("Share", {
                 context.startActivity(android.content.Intent.createChooser(QrPayload.shareIntent(result.detail, sensitive = false), "Share"))
             })
         }
-        if (secure && result.title == "Recovery words") PyxTextLink("Copy recovery words", {
-            modalRoute = WalletModalRoute.SEED_COPY_WARNING
-        })
+        if (secure && result.title == "Recovery words") PyxGhostButton(
+            "Copy recovery words",
+            { modalRoute = WalletModalRoute.SEED_COPY_WARNING },
+            Modifier.fillMaxWidth().padding(top = 16.dp),
+            icon = PyxIcons.Copy,
+        )
         copyAnnouncement?.let {
             Text(it, style = PyxType.rowSub, color = PyxMuted,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
         }
         if (secure) {
             Spacer(Modifier.height(10.dp))
-            PyxPrimaryButton("I saved these securely", dismiss, Modifier.fillMaxWidth())
+            PyxPrimaryButton("I've written it down", dismiss, Modifier.fillMaxWidth())
         }
     }
     if (modalRoute == WalletModalRoute.SEED_COPY_WARNING) AlertDialog(
@@ -1549,10 +1830,7 @@ private fun ClipboardCopyButton(
     var announcement by remember(value) { mutableStateOf<String?>(null) }
     Column {
         PyxTextLink(buttonLabel, { announcement = QrPayload.copy(context, label, value, sensitive).announcement })
-        announcement?.let {
-            Text(it, style = PyxType.rowSub, color = PyxMuted,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-        }
+        cash.pyx.app.ui.components.AnnouncementText(announcement)
     }
 }
 
@@ -1584,8 +1862,10 @@ private fun ReceiveContent(
     stopEcashDisplay: () -> Unit,
     addresses: List<cash.pyx.app.nativeapi.OnchainAddress>,
     scan: () -> Unit,
+    currencySettingsState: cash.pyx.app.data.CurrencySettingsState = cash.pyx.app.data.CurrencySettingsState(),
 ) {
     val client = state.snapshot.selected?.clientHandle ?: return
+    var pendingFiat by remember { mutableStateOf<String?>(null) }
     var tab by remember(initialPayload, initialType) {
         mutableIntStateOf(if (initialType == cash.pyx.app.nativeapi.InputType.ECASH) 2 else 0)
     }
@@ -1652,17 +1932,7 @@ private fun ReceiveContent(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
     ) {
         PyxTopBar("Receive Bitcoin", onBack = back)
-        Row(
-            Modifier
-                .background(PyxSurface, RoundedCornerShape(10.dp))
-                .border(1.dp, PyxBorder, RoundedCornerShape(10.dp))
-                .padding(start = 8.dp, end = 13.dp, top = 7.dp, bottom = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
-            BtcBadge(size = 24.dp)
-            Text("Bitcoin", style = PyxType.rowSub.copy(fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = PyxText)
-        }
+        cash.pyx.app.ui.components.AssetPill()
         Spacer(Modifier.height(14.dp))
         PyxSegmented(listOf("Lightning", "On-Chain", "Ecash"), tab, { index -> tab = index; amount = ""; convertedSats = null; clear() })
         if (tab == 2) {
@@ -1794,53 +2064,148 @@ private fun ReceiveContent(
             )
         }
     }
-    if (unitSheet) ReceiveUnitSheet(
-        current = unit,
-        fiatCode = state.snapshot.currencyCode,
-        onPick = { picked -> unit = picked; amount = ""; convertedSats = null; clear(); unitSheet = false },
+    LaunchedEffect(unitSheet) { if (unitSheet) submit("load_currencies", 0, "", 0) }
+    LaunchedEffect(state.snapshot.currencyCode, pendingFiat) {
+        // A newly picked default currency lands asynchronously; adopt it once saved.
+        if (pendingFiat != null && state.snapshot.currencyCode == pendingFiat) {
+            unit = TransferAmountUnit.FIAT; amount = ""; convertedSats = null; pendingFiat = null; unitSheet = false
+        }
+    }
+    if (unitSheet) CurrencyPickerSheet(
+        title = "Default currency",
+        currencies = currencySettingsState.currencies,
+        activeCode = when (unit) {
+            TransferAmountUnit.SATS -> "SATS"
+            TransferAmountUnit.BTC -> "BTC"
+            TransferAmountUnit.FIAT -> state.snapshot.currencyCode
+        },
+        savingCode = currencySettingsState.savingCode,
+        includeBtcUnits = true,
+        onPick = { code ->
+            when (code) {
+                "SATS" -> { unit = TransferAmountUnit.SATS; amount = ""; convertedSats = null; clear(); unitSheet = false }
+                "BTC" -> { unit = TransferAmountUnit.BTC; amount = ""; convertedSats = null; clear(); unitSheet = false }
+                state.snapshot.currencyCode -> { unit = TransferAmountUnit.FIAT; amount = ""; convertedSats = null; clear(); unitSheet = false }
+                else -> { pendingFiat = code; submit("currency", state.factoryHandle, code, 0) }
+            }
+        },
         dismiss = { unitSheet = false },
     )
 }
 
+/** Prototype search box: surface-2 fill, leading search icon, placeholder-only. */
+@Composable
+private fun CurrencySearchField(value: String, onChange: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .background(PyxSurface2, RoundedCornerShape(12.dp))
+            .border(1.dp, PyxBorder, RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(PyxIcons.Search, contentDescription = null, tint = PyxFaint, modifier = Modifier.size(18.dp))
+        androidx.compose.foundation.text.BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            modifier = Modifier.weight(1f),
+            textStyle = PyxType.body.copy(color = PyxText),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(PyxOrange),
+            singleLine = true,
+            decorationBox = { inner ->
+                Box {
+                    if (value.isEmpty()) Text("Search currency or code", style = PyxType.body, color = PyxFaint)
+                    inner()
+                }
+            },
+        )
+    }
+}
+
+/** One currency/unit row: flag or ₿ glyph, code column, name, active check or saving spinner. */
+@Composable
+private fun CurrencyRow(
+    flag: String?,
+    code: String,
+    name: String,
+    active: Boolean,
+    saving: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .background(if (active) PyxSurface2 else Color.Transparent, RoundedCornerShape(11.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.width(28.dp), contentAlignment = Alignment.Center) {
+            if (flag == null) Text("₿", style = PyxType.keyValue.copy(fontSize = 18.sp), color = PyxOrange)
+            else Text(flag, style = PyxType.body.copy(fontSize = 19.sp))
+        }
+        Text(code, style = PyxType.keyValue.copy(fontSize = 14.5.sp), color = PyxText, modifier = Modifier.widthIn(min = 50.dp))
+        Text(name, style = PyxType.rowSub.copy(fontSize = 13.5.sp), color = PyxMuted,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        when {
+            saving -> CircularProgressIndicator(Modifier.size(20.dp), color = PyxOrange)
+            active -> Icon(PyxIcons.Check, contentDescription = "Selected", tint = PyxOrange, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+/** Prototype currency picker sheet: search, pinned BTC units, flagged fiat list. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReceiveUnitSheet(
-    current: TransferAmountUnit,
-    fiatCode: String,
-    onPick: (TransferAmountUnit) -> Unit,
+private fun CurrencyPickerSheet(
+    title: String,
+    currencies: List<cash.pyx.app.nativeapi.FiatCurrency>,
+    activeCode: String,
+    savingCode: String?,
+    includeBtcUnits: Boolean,
+    onPick: (String) -> Unit,
     dismiss: () -> Unit,
 ) {
-    ModalBottomSheet(
-        onDismissRequest = dismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = PyxSurface,
-        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
-        scrimColor = Color(0xFF040609).copy(alpha = 0.55f),
-        dragHandle = {
-            Box(
-                Modifier.padding(top = 6.dp, bottom = 10.dp)
-                    .size(width = 40.dp, height = 4.dp)
-                    .background(cash.pyx.app.ui.theme.PyxBorderStrong, RoundedCornerShape(2.dp)),
-            )
-        },
+    var query by remember { mutableStateOf("") }
+    cash.pyx.app.ui.components.PyxSheet(
+        onDismiss = dismiss,
+        modifier = Modifier.testTag("currency_picker_sheet"),
     ) {
         Column(Modifier.padding(horizontal = 22.dp).padding(bottom = 30.dp)) {
-            Text("Amount unit", style = PyxType.centeredTitle, color = PyxText,
+            Text(title, style = PyxType.centeredTitle.copy(fontSize = 18.sp), color = PyxText,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
-            listOf(
-                Triple(TransferAmountUnit.SATS, "SATS", "Satoshis"),
-                Triple(TransferAmountUnit.BTC, "BTC", "Bitcoin"),
-                Triple(TransferAmountUnit.FIAT, fiatCode, "Display currency"),
-            ).forEach { (option, code, name) ->
-                Row(
-                    Modifier.fillMaxWidth().clickable { onPick(option) }.padding(vertical = 13.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(code, style = PyxType.keyValue, color = PyxText, modifier = Modifier.widthIn(min = 52.dp))
-                    Text(name, style = PyxType.rowSub, color = PyxMuted, modifier = Modifier.weight(1f))
-                    if (option == current) Icon(PyxIcons.Check, contentDescription = "Selected", tint = PyxOrange, modifier = Modifier.size(18.dp))
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp))
+            CurrencySearchField(query) { query = it.take(32) }
+            Spacer(Modifier.height(10.dp))
+            val sections = CurrencyPickerPresentation.sections(query, currencies, includeBtcUnits)
+            LazyColumn(Modifier.heightIn(max = 380.dp)) {
+                items(sections.btcUnits.size, key = { "unit_${sections.btcUnits[it].code}" }) { index ->
+                    val unit = sections.btcUnits[index]
+                    CurrencyRow(null, unit.code, unit.name, active = activeCode == unit.code, saving = false, enabled = savingCode == null) {
+                        onPick(unit.code)
+                    }
+                }
+                if (sections.separator) item(key = "separator") {
+                    Box(Modifier.padding(vertical = 6.dp)) { PyxDivider() }
+                }
+                items(sections.fiat.size, key = { "fiat_${sections.fiat[it].code}" }) { index ->
+                    val currency = sections.fiat[index]
+                    CurrencyRow(
+                        CurrencyPickerPresentation.flag(currency.code, currency.symbol),
+                        currency.code, currency.name,
+                        active = activeCode == currency.code,
+                        saving = savingCode == currency.code,
+                        enabled = savingCode == null,
+                    ) { onPick(currency.code) }
+                }
+                if (sections.empty) item(key = "empty") {
+                    Text(
+                        "No currency matches \"$query\"",
+                        style = PyxType.rowSub.copy(fontSize = 13.sp), color = PyxFaint,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    )
                 }
             }
         }
@@ -1925,10 +2290,7 @@ private fun CodeField(payload: String) {
             }
         }
     }
-    announcement?.let {
-        Text(it, style = PyxType.rowSub, color = PyxMuted,
-            modifier = Modifier.padding(top = 6.dp).semantics { liveRegion = LiveRegionMode.Polite })
-    }
+    cash.pyx.app.ui.components.AnnouncementText(announcement, Modifier.padding(top = 6.dp))
 }
 
 /** Ecash arrives as an animated QR from the sender, so receiving leads with the scanner. */
@@ -1958,37 +2320,7 @@ private fun EcashReceivePane(
         return
     }
     // scan-frame: dark viewfinder with accent corner brackets, tap to open the scanner
-    Box(
-        Modifier.fillMaxWidth().aspectRatio(1f)
-            .background(
-                Brush.radialGradient(listOf(Color(0xFF10161F), Color(0xFF070A0E))),
-                RoundedCornerShape(24.dp),
-            )
-            .border(1.dp, PyxBorder, RoundedCornerShape(24.dp))
-            .clickable(onClickLabel = "Scan ecash") { scan() }
-            .drawBehind {
-                val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
-                    width = 3.dp.toPx(),
-                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
-                )
-                val inset = 14.dp.toPx()
-                val arm = 34.dp.toPx()
-                val w = size.width
-                val h = size.height
-                listOf(
-                    androidx.compose.ui.graphics.Path().apply { moveTo(inset, inset + arm); lineTo(inset, inset); lineTo(inset + arm, inset) },
-                    androidx.compose.ui.graphics.Path().apply { moveTo(w - inset - arm, inset); lineTo(w - inset, inset); lineTo(w - inset, inset + arm) },
-                    androidx.compose.ui.graphics.Path().apply { moveTo(inset, h - inset - arm); lineTo(inset, h - inset); lineTo(inset + arm, h - inset) },
-                    androidx.compose.ui.graphics.Path().apply { moveTo(w - inset - arm, h - inset); lineTo(w - inset, h - inset); lineTo(w - inset, h - inset - arm) },
-                ).forEach { path -> drawPath(path, color = PyxOrange, style = stroke) }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(PyxIcons.Scan, contentDescription = null, tint = PyxFaint, modifier = Modifier.size(44.dp))
-            Text("Point at the sender's Ecash QR", style = PyxType.rowSub, color = PyxMuted)
-        }
-    }
+    cash.pyx.app.ui.components.ScanPromptFrame("Point at the sender's Ecash QR", onClickLabel = "Scan ecash", onClick = scan)
     Spacer(Modifier.height(16.dp))
     PyxField(
         value = token, onValueChange = { onToken(it); clear() },
@@ -2018,6 +2350,8 @@ private fun TransferContent(
     ecashFrame: String?,
     startEcashDisplay: (String, Boolean) -> Unit,
     stopEcashDisplay: () -> Unit,
+    contactsState: cash.pyx.app.data.ContactsFeatureState = cash.pyx.app.data.ContactsFeatureState(),
+    scan: () -> Unit = {},
 ) {
     val client = state.snapshot.selected?.clientHandle ?: return
     var tab by remember(initialPayload, initialType) {
@@ -2030,20 +2364,34 @@ private fun TransferContent(
     var text by remember(initialPayload) { mutableStateOf(initialPayload.orEmpty()) }
     var amount by remember { mutableStateOf("") }
     var amountUnit by remember { mutableStateOf(TransferAmountUnit.SATS) }
-    var modalRoute by remember { mutableStateOf<WalletModalRoute?>(null) }
+    var maxFee by remember { mutableStateOf("5") }
+    var unitSheet by remember { mutableStateOf(false) }
+    var ecashReview by remember { mutableStateOf(false) }
     val labels = listOf("Lightning", "On-chain", "Ecash")
     LaunchedEffect(initialPayload, initialType) {
         clear()
         if (initialType == cash.pyx.app.nativeapi.InputType.BITCOIN && !initialPayload.isNullOrBlank()) submit("parse_bitcoin", client, initialPayload, 0)
     }
+    LaunchedEffect(tab) { if (tab == 0) submit("load_contacts", state.factoryHandle, "", 0) }
     LaunchedEffect(operation) {
         if (operation is WalletOperation.BitcoinParsed) {
             tab = 1; text = operation.payment.address
             amount = operation.payment.amountSat?.toString().orEmpty(); amountUnit = TransferAmountUnit.SATS
-        } else if (operation is WalletOperation.LnurlPrepared && operation.fixedAmount) {
-            amount = operation.minSat.toString()
+        } else if (operation is WalletOperation.LnurlPrepared) {
+            amountUnit = TransferAmountUnit.SATS
+            if (operation.fixedAmount) amount = operation.minSat.toString()
         }
     }
+    // Client-side gating only; the authoritative amount is always the native quote.
+    val destination = if (tab == 0) SendDestinationPresentation.parse(text) else null
+    val lockedSats: Long? = when {
+        tab == 0 && destination?.lockedAmountSat != null -> destination.lockedAmountSat
+        tab == 0 && operation is WalletOperation.LnurlPrepared && operation.fixedAmount -> operation.minSat
+        tab == 1 -> (operation as? WalletOperation.BitcoinParsed)?.payment?.amountSat
+        else -> null
+    }
+    val amountBlocked = tab == 0 && destination?.valid != true
+    val maxFeeSat = maxFee.toLongOrNull()
     Column(
         Modifier
             .fillMaxSize()
@@ -2051,73 +2399,186 @@ private fun TransferContent(
             .padding(vertical = 12.dp),
     ) {
         PyxTopBar("Send", onBack = back)
-        PyxSegmented(labels, tab, { index -> tab = index; text = ""; amount = ""; clear() })
-        Spacer(Modifier.height(16.dp))
-        val needsAmount = tab != 0
+        cash.pyx.app.ui.components.AssetPill()
+        Spacer(Modifier.height(14.dp))
+        PyxSegmented(labels, tab, { index -> tab = index; text = ""; amount = ""; ecashReview = false; clear() })
         val needsText = tab != 2
-        if (needsText) PyxField(
-            value = text, onValueChange = { text = it; clear() }, modifier = Modifier.fillMaxWidth(),
-            label = { Text(if (tab == 0) "Lightning invoice" else if (tab == 1) "Bitcoin address" else "Ecash token") },
-            minLines = 2,
-            enabled = operation !is WalletOperation.Submitting && operation !is WalletOperation.BitcoinParsed,
-        )
-        if (needsAmount) {
-            val uriAmountLocked = (operation as? WalletOperation.BitcoinParsed)?.payment?.amountSat != null
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TransferAmountUnit.entries.forEach { unit ->
-                    FilterChip(
-                        selected = amountUnit == unit,
-                        onClick = { amountUnit = unit; amount = ""; clear() },
-                        enabled = !uriAmountLocked,
-                        label = { Text(when (unit) { TransferAmountUnit.SATS -> "Sats"; TransferAmountUnit.BTC -> "BTC"; TransferAmountUnit.FIAT -> "Fiat" }) },
-                    )
+        if (needsText) {
+            FieldLabel("To")
+            SendInputSurface(disabled = false) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = text,
+                    onValueChange = { text = it.take(16 * 1024); ecashReview = false; clear() },
+                    modifier = Modifier.weight(1f).testTag("send_destination"),
+                    enabled = operation !is WalletOperation.Submitting && operation !is WalletOperation.BitcoinParsed,
+                    textStyle = PyxType.inputMono.copy(color = PyxText),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(PyxOrange),
+                    singleLine = true,
+                    decorationBox = { inner ->
+                        Box {
+                            if (text.isEmpty()) Text(
+                                if (tab == 0) "LN address, LNURL, invoice or BOLT12" else "Bitcoin address",
+                                style = PyxType.inputMono, color = PyxFaint,
+                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            inner()
+                        }
+                    },
+                )
+                Spacer(Modifier.width(10.dp))
+                Icon(
+                    PyxIcons.Scan, contentDescription = null, tint = PyxMuted,
+                    modifier = Modifier.size(20.dp)
+                        .clickable(onClickLabel = "Scan destination") { scan() }
+                        .semantics { this.text = AnnotatedString("Scan destination") },
+                )
+            }
+            // Address book: filtered contacts appear while the destination is incomplete.
+            if (tab == 0 && destination?.valid != true && contactsState.contacts.isNotEmpty()) {
+                val matches = ContactsPresentation.filter(contactsState.contacts, text)
+                Surface(
+                    color = PyxSurface2,
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, cash.pyx.app.ui.theme.PyxBorderStrong),
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                ) {
+                    Column {
+                        if (matches.isEmpty()) Text(
+                            "No saved contacts match", style = PyxType.rowSub.copy(fontSize = 13.sp), color = PyxFaint,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 16.dp),
+                        )
+                        matches.take(4).forEach { contact ->
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clickable(onClickLabel = "Use ${contact.name}") { text = contact.lnurl; clear() }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                InitialAvatar(contact.name, size = 34.dp)
+                                Column(Modifier.weight(1f)) {
+                                    Text(contact.name, style = PyxType.rowTitle.copy(fontSize = 14.sp), color = PyxText)
+                                    Text(contact.lnurl, style = PyxType.rowSub, color = PyxMuted,
+                                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            PyxField(
-                value = amount,
-                onValueChange = { value ->
-                    amount = if (amountUnit == TransferAmountUnit.SATS) value.filter(Char::isDigit)
-                    else value.filter(BitcoinAmountPresentation::inputCharacterAllowed)
-                    clear()
-                },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(when (amountUnit) { TransferAmountUnit.SATS -> "Amount (sats)"; TransferAmountUnit.BTC -> "Amount (BTC)"; TransferAmountUnit.FIAT -> "Amount (fiat)" }) },
-                enabled = operation !is WalletOperation.Submitting && !uriAmountLocked,
+        }
+        run {
+            FieldLabel("Amount")
+            SendInputSurface(disabled = amountBlocked) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = if (lockedSats != null) LocalePresentation.integer(lockedSats) else amount,
+                    onValueChange = { value ->
+                        if (lockedSats != null) return@BasicTextField
+                        amount = if (amountUnit == TransferAmountUnit.SATS) value.filter(Char::isDigit)
+                        else value.filter(BitcoinAmountPresentation::inputCharacterAllowed)
+                        ecashReview = false
+                        clear()
+                    },
+                    modifier = Modifier.weight(1f).testTag("send_amount"),
+                    enabled = operation !is WalletOperation.Submitting && lockedSats == null && !amountBlocked,
+                    readOnly = lockedSats != null,
+                    textStyle = PyxType.input.copy(color = PyxText),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(PyxOrange),
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = if (amountUnit == TransferAmountUnit.SATS) androidx.compose.ui.text.input.KeyboardType.Number
+                        else androidx.compose.ui.text.input.KeyboardType.Decimal,
+                    ),
+                    decorationBox = { inner ->
+                        Box {
+                            if (lockedSats == null && amount.isEmpty()) Text(
+                                if (amountBlocked) "Enter a destination first" else "0",
+                                style = PyxType.input, color = PyxFaint,
+                            )
+                            inner()
+                        }
+                    },
+                )
+                Spacer(Modifier.width(10.dp))
+                if (lockedSats != null) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Icon(PyxIcons.Lock, contentDescription = "Amount locked by invoice", tint = PyxFaint, modifier = Modifier.size(15.dp))
+                    Text("SATS", style = PyxType.keyValue.copy(fontSize = 14.sp), color = PyxMuted)
+                } else Row(
+                    Modifier.clickable(enabled = !amountBlocked, onClickLabel = "Change unit") { unitSheet = true },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text(
+                        when (amountUnit) {
+                            TransferAmountUnit.SATS -> "SATS"
+                            TransferAmountUnit.BTC -> "BTC"
+                            TransferAmountUnit.FIAT -> state.snapshot.currencyCode
+                        },
+                        style = PyxType.keyValue.copy(fontSize = 14.sp), color = PyxMuted,
+                    )
+                    Icon(PyxIcons.ChevronDown, contentDescription = null, tint = PyxMuted, modifier = Modifier.size(13.dp))
+                }
+            }
+            if (operation is WalletOperation.FiatConverted) Text(
+                "\u2248 ${LocalePresentation.integer(operation.amountSat)} sats \u00b7 ${operation.currencyCode}",
+                style = PyxType.fiat, color = PyxMuted, modifier = Modifier.padding(top = 8.dp),
             )
-            if (operation is WalletOperation.FiatConverted) Text("${operation.amountSat} sats · ${operation.currencyCode}", style = PyxType.fiat, color = PyxMuted)
             if (operation is WalletOperation.BitcoinParsed) {
-                operation.payment.label?.let { Text("Label: $it", style = PyxType.rowSub, color = PyxMuted) }
+                operation.payment.label?.let { Text("Label: $it", style = PyxType.rowSub, color = PyxMuted, modifier = Modifier.padding(top = 6.dp)) }
                 operation.payment.message?.let { Text("Message: $it", style = PyxType.rowSub, color = PyxMuted) }
                 if (operation.payment.amountSat != null) Text("Amount supplied by Bitcoin URI", style = PyxType.rowSub, color = PyxMuted)
             }
         }
-        Spacer(Modifier.height(12.dp))
+        if (tab != 2) {
+            FieldLabel("Max fee")
+            SendInputSurface(disabled = false) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = maxFee,
+                    onValueChange = { maxFee = it.filter(Char::isDigit).take(9) },
+                    modifier = Modifier.weight(1f).testTag("send_max_fee"),
+                    textStyle = PyxType.body.copy(color = PyxText),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(PyxOrange),
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                )
+                Text("SATS", style = PyxType.keyValue.copy(fontSize = 14.sp), color = PyxMuted)
+            }
+        }
+        Spacer(Modifier.height(20.dp))
         val submitting = operation is WalletOperation.Submitting
         val textValid = !needsText || text.isNotBlank()
         val convertedAmount = (operation as? WalletOperation.FiatConverted)?.amountSat
-        val amountValid = !needsAmount || when {
+        val amountValid = when {
+            tab == 0 -> true // Lightning amounts resolve from the invoice or the LNURL step
+            lockedSats != null -> true
             convertedAmount != null -> convertedAmount > 0
             amountUnit == TransferAmountUnit.FIAT -> amount.toBigDecimalOrNull()?.signum() == 1
             amountUnit == TransferAmountUnit.BTC -> BitcoinAmountPresentation.toSats(amount) != null
             else -> (amount.toLongOrNull() ?: 0L) > 0
         }
-        PyxPrimaryButton(
-            text = if (operation is WalletOperation.Submitting) "Submitting…" else if (needsAmount && amountUnit == TransferAmountUnit.FIAT && operation !is WalletOperation.FiatConverted) "Convert amount" else "Review and send",
+        val quoteReady = operation is WalletOperation.LightningPrepared || operation is WalletOperation.OnchainPrepared
+        if (!quoteReady && !(tab == 2 && ecashReview)) PyxPrimaryButton(
+            text = if (submitting) "Submitting\u2026" else if (lockedSats == null && amountUnit == TransferAmountUnit.FIAT && operation !is WalletOperation.FiatConverted && tab != 0) "Convert amount" else "Review and send",
             onClick = onClickLabel@{
-                if (needsAmount && amountUnit == TransferAmountUnit.FIAT && operation !is WalletOperation.FiatConverted) {
+                if (lockedSats == null && amountUnit == TransferAmountUnit.FIAT && operation !is WalletOperation.FiatConverted && tab != 0) {
                     submit("fiat_to_sats", client, amount, 0)
                     return@onClickLabel
                 }
-                val enteredSat = (operation as? WalletOperation.FiatConverted)?.amountSat
+                val enteredSat = lockedSats
+                    ?: convertedAmount
                     ?: (if (amountUnit == TransferAmountUnit.BTC) BitcoinAmountPresentation.toSats(amount) else amount.toLongOrNull())
                     ?: 0L
                 when (tab) {
-                    0 -> submit(if (initialType == cash.pyx.app.nativeapi.InputType.LNURL) "prepare_lnurl" else "prepare_lightning", client, text, 0)
+                    0 -> submit(
+                        if (initialType == cash.pyx.app.nativeapi.InputType.LNURL || destination?.kind == SendDestinationPresentation.Kind.LNURL || destination?.kind == SendDestinationPresentation.Kind.LN_ADDRESS) "prepare_lnurl" else "prepare_lightning",
+                        client, text, 0,
+                    )
                     1 -> submit("prepare_onchain", client, (operation as? WalletOperation.BitcoinParsed)?.destination ?: text, enteredSat)
-                    else -> modalRoute = WalletModalRoute.SEND_CONFIRMATION
+                    else -> ecashReview = true
                 }
             },
-            enabled = !submitting && textValid && amountValid,
+            enabled = !submitting && textValid && amountValid && (tab != 2 || amountValid),
             modifier = Modifier.fillMaxWidth(),
         )
         when (operation) {
@@ -2153,11 +2614,9 @@ private fun TransferContent(
             is WalletOperation.LnurlPrepared -> {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    if (operation.fixedAmount) "Fixed amount: ${operation.minSat} sats" else "Allowed: ${operation.minSat}–${operation.maxSat} sats",
+                    if (operation.fixedAmount) "Fixed amount: ${operation.minSat} sats" else "Allowed: ${operation.minSat}\u2013${operation.maxSat} sats",
                     style = PyxType.rowSub, color = PyxMuted,
                 )
-                PyxField(value = amount, onValueChange = { amount = it.filter(Char::isDigit) }, modifier = Modifier.fillMaxWidth(),
-                    enabled = !operation.fixedAmount, label = { Text("Amount (sats)") })
                 val resolvedAmount = LnurlQuotePresentation.resolveAmount(operation, amount)
                 PyxPrimaryButton("Get fee quote",
                     { resolvedAmount?.let { submit("prepare_lnurl_quote", client, operation.sessionHandle.toString(), it) } },
@@ -2176,8 +2635,17 @@ private fun TransferContent(
                         else CardRow("Gateway", subtitle = operation.quote.gatewayUrl)
                     }
                 }
-                PyxPrimaryButton("Confirm quoted payment", { modalRoute = WalletModalRoute.SEND_CONFIRMATION },
-                    Modifier.fillMaxWidth().padding(top = 10.dp))
+                val feeOk = maxFeeSat == null || operation.quote.feeSat <= maxFeeSat
+                if (!feeOk) Text(
+                    "The quoted fee exceeds your max fee.", style = PyxType.rowSub, color = PyxRed,
+                    modifier = Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                )
+                cash.pyx.app.ui.components.PyxSlideToConfirm(
+                    enabled = feeOk && !submitting,
+                    done = submitting,
+                    onConfirm = { submit("execute_lightning", client, operation.quote.quoteHandle.toString(), 0) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                )
             }
             is WalletOperation.OnchainPrepared -> {
                 Spacer(Modifier.height(12.dp))
@@ -2192,29 +2660,97 @@ private fun TransferContent(
                         operation.quote.message?.let { PyxDivider(); CardRow("Message", subtitle = it) }
                     }
                 }
-                PyxPrimaryButton("Confirm quoted payment", { modalRoute = WalletModalRoute.SEND_CONFIRMATION },
-                    Modifier.fillMaxWidth().padding(top = 10.dp))
+                val feeOk = maxFeeSat == null || operation.quote.feeSat <= maxFeeSat
+                if (!feeOk) Text(
+                    "The quoted fee exceeds your max fee.", style = PyxType.rowSub, color = PyxRed,
+                    modifier = Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                )
+                cash.pyx.app.ui.components.PyxSlideToConfirm(
+                    enabled = feeOk && !submitting,
+                    done = submitting,
+                    onConfirm = { submit("execute_onchain", client, operation.quote.quoteHandle.toString(), 0) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                )
             }
             is WalletOperation.FiatConverted -> Unit
             is WalletOperation.BitcoinParsed -> Unit
             else -> Unit
         }
-    }
-    if (modalRoute == WalletModalRoute.SEND_CONFIRMATION) AlertDialog(
-        onDismissRequest = { modalRoute = null },
-        title = { Text("Confirm send") },
-        text = { Text("Review the destination and amount carefully. This action cannot be undone.") },
-        confirmButton = { Button(onClick = {
-            modalRoute = null
-            if (operation is WalletOperation.LightningPrepared) {
-                submit("execute_lightning", client, operation.quote.quoteHandle.toString(), 0)
-            } else if (operation is WalletOperation.OnchainPrepared) {
-                submit("execute_onchain", client, operation.quote.quoteHandle.toString(), 0)
-            } else {
-                submit("create_ecash", client, text, amount.toLongOrNull() ?: 0)
+        if (tab == 2 && ecashReview && operation !is WalletOperation.Success) {
+            Spacer(Modifier.height(12.dp))
+            PyxCard(padding = 0.dp) {
+                Column(Modifier.padding(horizontal = 15.dp)) {
+                    CardRow("Create ecash", value = "${(convertedAmount ?: (if (amountUnit == TransferAmountUnit.BTC) BitcoinAmountPresentation.toSats(amount) else amount.toLongOrNull()) ?: 0L)} sats", valueColor = PyxText)
+                }
             }
-        }) { Text("Confirm") } },
-        dismissButton = { TextButton(onClick = { modalRoute = null }) { Text("Cancel") } },
+            cash.pyx.app.ui.components.PyxSlideToConfirm(
+                enabled = !submitting,
+                done = submitting,
+                label = "Slide to create",
+                doneLabel = "Creating\u2026",
+                onConfirm = {
+                    val sats = convertedAmount
+                        ?: (if (amountUnit == TransferAmountUnit.BTC) BitcoinAmountPresentation.toSats(amount) else amount.toLongOrNull())
+                        ?: 0L
+                    submit("create_ecash", client, text, sats)
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            )
+        }
+    }
+    // Send conversions always use the wallet's display currency (fiat_to_sats takes
+    // no currency code), so the unit sheet offers SATS/BTC plus that one fiat.
+    if (unitSheet) CurrencyPickerSheet(
+        title = "Amount currency",
+        currencies = listOf(
+            cash.pyx.app.nativeapi.FiatCurrency(state.snapshot.currencyCode, "Display currency", state.snapshot.currencyCode, 2),
+        ),
+        activeCode = when (amountUnit) {
+            TransferAmountUnit.SATS -> "SATS"
+            TransferAmountUnit.BTC -> "BTC"
+            TransferAmountUnit.FIAT -> state.snapshot.currencyCode
+        },
+        savingCode = null,
+        includeBtcUnits = true,
+        onPick = { code ->
+            amountUnit = when (code) {
+                "SATS" -> TransferAmountUnit.SATS
+                "BTC" -> TransferAmountUnit.BTC
+                else -> TransferAmountUnit.FIAT
+            }
+            amount = ""; clear(); unitSheet = false
+        },
+        dismiss = { unitSheet = false },
+    )
+}
+
+/** Uppercase micro-label rendered above a prototype input (natural-case semantics). */
+@Composable
+private fun FieldLabel(label: String) {
+    Box(
+        Modifier.padding(top = 16.dp, bottom = 8.dp)
+            .semantics { text = AnnotatedString(label) },
+    ) {
+        Text(
+            label.uppercase(),
+            style = PyxType.sectionLabel,
+            color = PyxFaint,
+            modifier = Modifier.clearAndSetSemantics {},
+        )
+    }
+}
+
+/** Prototype input surface: surface fill, 1dp border, 12dp radius, 15dp padding. */
+@Composable
+private fun SendInputSurface(disabled: Boolean, content: @Composable RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .alpha(if (disabled) 0.5f else 1f)
+            .background(PyxSurface, RoundedCornerShape(12.dp))
+            .border(1.dp, PyxBorder, RoundedCornerShape(12.dp))
+            .padding(15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content,
     )
 }
 
@@ -2277,17 +2813,9 @@ private fun PaymentRow(payment: Payment, masked: Boolean = false, showDivider: B
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(Modifier.size(42.dp)) {
-            Box(
-                Modifier.size(42.dp).background(PyxSurface2, RoundedCornerShape(11.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                androidx.compose.material3.Icon(
-                    if (incoming) PyxIcons.ArrowDown else PyxIcons.ArrowUp,
-                    contentDescription = null,
-                    tint = if (incoming) PyxGreen else PyxMuted,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
+            cash.pyx.app.ui.components.IconTile(
+                if (incoming) PyxIcons.ArrowDown else PyxIcons.ArrowUp, tint = if (incoming) PyxGreen else PyxMuted, size = 42.dp, cornerRadius = 11.dp, iconSize = 18.dp,
+            )
             // Small ₿ badge on the icon corner, occluding the icon box like the prototype.
             Box(
                 Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 4.dp).size(17.dp)
@@ -2312,14 +2840,9 @@ private fun PaymentRow(payment: Payment, masked: Boolean = false, showDivider: B
         }
         // Full string stays exactly the amount; the unit renders small and faint.
         val amountText = if (masked) "•••" else ActivityPresentation.amount(payment)
-        val styledRowAmount = buildAnnotatedString {
-            val unitStart = amountText.lastIndexOf(" sat")
-            if (unitStart <= 0) append(amountText)
-            else {
-                append(amountText.substring(0, unitStart))
-                withStyle(SpanStyle(fontSize = 11.sp, color = PyxFaint)) { append(amountText.substring(unitStart)) }
-            }
-        }
+        val styledRowAmount = cash.pyx.app.ui.components.satAmountAnnotated(
+            amountText, unitStyle = SpanStyle(fontSize = 11.sp, color = PyxFaint),
+        )
         Text(styledRowAmount, style = PyxType.rowAmount, color = if (incoming) PyxGreen else PyxRed)
     }
     if (showDivider) PyxDivider()
@@ -2475,17 +2998,13 @@ fun PyxApp(
             "create_ecash" -> guarded("Create ecash token") { viewModel.createEcash(client, amount) }
             "switch" -> viewModel.switchFederation(client, text)
             "currency" -> viewModel.setCurrency(client, text)
-            "backup" -> guarded("Unlock recovery words") { viewModel.backup(client) }
             "leave" -> guarded("Leave federation") { viewModel.leave(client, text) }
-            "details" -> viewModel.details(client)
             "prepare_lnurl" -> viewModel.prepareLnurl(text)
             "prepare_lnurl_quote" -> text.toLongOrNull()?.let { viewModel.prepareLnurlQuote(client, it, amount) }
             "load_contacts" -> viewModel.loadContacts(client)
             "save_contact" -> text.split('\u0000', limit = 2).takeIf { it.size == 2 }?.let { viewModel.saveContact(client, it[1], it[0]) }
             "delete_contact" -> viewModel.deleteContact(client, text)
-            "connection" -> viewModel.loadConnection(client)
             "details_connection" -> viewModel.loadFederationDetails(client)
-            "refresh_home" -> viewModel.refreshHome()
             "fiat_to_sats" -> viewModel.convertFiat(client, text)
             "show_successor" -> viewModel.showSuccessorInvite()
             "load_currencies" -> viewModel.loadCurrencies()

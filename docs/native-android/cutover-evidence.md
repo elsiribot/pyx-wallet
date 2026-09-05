@@ -118,6 +118,11 @@ plain PSS comparison or an unanalyzed heap dump is not accepted as a substitute.
   payment detail bottom sheet, federation row removed): 52 tests, 0 failures;
   report `build/device-certification/20260905T134428Z.txt` with preserved
   reports in `build/device-certification/20260905T134428Z-reports/`
+- Re-run 2026-09-05 after the full screen-by-screen reference pass (send,
+  scan, wallets, details, guardians, settings, currency, access, seed backup,
+  contacts, addresses, join, onboarding) and the shared-component refactor:
+  52 tests, 0 failures; reports `build/device-certification/20260905T213719Z.txt`
+  and `20260905T214700Z.txt`
 
 ### Android 14 x86_64 isolated R8/JNI — PASS
 
