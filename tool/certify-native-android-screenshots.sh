@@ -101,7 +101,8 @@ STAGE="390 by 844 dp reference viewport"
 adb_device shell wm size 1080x2337 >/dev/null; adb_device shell wm density 443 >/dev/null
 adb_device shell settings put system font_scale 1.0 >/dev/null
 capture onboarding_f100 onboarding "Welcome to Pyx"
-capture home_status_activity_f100 home_status_activity "Example federation"
+capture home_status_activity_f100 home_status_activity "1,250 sats"
+capture home_tx_sheet_f100 home_tx_sheet "Lightning received"
 capture send_receive_confirmation_f100 send_receive_confirmation "No payment will be submitted from this fixture"
 capture settings_access_seed_safe_f100 settings_access_seed_safe "No seed words are present in this fixture"
 capture error_offline_f100 error_offline "Could not reach federation guardians"
@@ -109,7 +110,8 @@ capture error_offline_f100 error_offline "Could not reach federation guardians"
 STAGE="390 by 844 dp at 130 percent font"
 adb_device shell settings put system font_scale 1.3 >/dev/null
 capture onboarding_f130 onboarding "Welcome to Pyx"
-capture home_status_activity_f130 home_status_activity "Example federation"
+capture home_status_activity_f130 home_status_activity "1,250 sats"
+capture home_tx_sheet_f130 home_tx_sheet "Lightning received"
 capture send_receive_confirmation_f130 send_receive_confirmation "No payment will be submitted from this fixture"
 capture settings_access_seed_safe_f130 settings_access_seed_safe "No seed words are present in this fixture"
 capture error_offline_f130 error_offline "Could not reach federation guardians"
@@ -130,6 +132,6 @@ adb_device shell settings put system font_scale 1.0 >/dev/null
 adb_device shell settings put global window_animation_scale 0 >/dev/null
 adb_device shell settings put global transition_animation_scale 0 >/dev/null
 adb_device shell settings put global animator_duration_scale 0 >/dev/null
-capture home_reduced_motion home_status_activity "Example federation"
+capture home_reduced_motion home_status_activity "1,250 sats"
 
 STAGE="complete"; SUCCESS=1

@@ -31,6 +31,18 @@ object ActivityPresentation {
         DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(locale)
             .format(Instant.ofEpochMilli(payment.timestampMillis).atZone(zoneId))
 
+    /** Time-of-day for a row; the day itself is carried by the group label above it. */
+    fun time(payment: Payment, zoneId: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String =
+        DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale)
+            .format(Instant.ofEpochMilli(payment.timestampMillis).atZone(zoneId))
+
+    fun dayLabel(date: LocalDate, today: LocalDate = LocalDate.now(), locale: Locale = Locale.getDefault()): String = when {
+        date == today -> "Today"
+        date == today.minusDays(1) -> "Yesterday"
+        date.year == today.year -> DateTimeFormatter.ofPattern("MMM d", locale).format(date)
+        else -> DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale).format(date)
+    }
+
     fun technicalFields(payment: Payment): List<TechnicalField> = listOfNotNull(
         payment.txid?.let { TechnicalField("Transaction ID", it, copyable = true, sensitive = false) },
         payment.address?.let { TechnicalField("Address", it, copyable = true, sensitive = false) },

@@ -114,6 +114,10 @@ plain PSS comparison or an unanalyzed heap dump is not accepted as a substitute.
   wallet compatibility, live federation/client streams, live-operation process
   death, physical arm64 loading, or the full hardware accessibility/security
   and API-level matrix
+- Re-run 2026-09-05 after the home-screen rework (inline paginated activity,
+  payment detail bottom sheet, federation row removed): 52 tests, 0 failures;
+  report `build/device-certification/20260905T134428Z.txt` with preserved
+  reports in `build/device-certification/20260905T134428Z-reports/`
 
 ### Android 14 x86_64 isolated R8/JNI — PASS
 

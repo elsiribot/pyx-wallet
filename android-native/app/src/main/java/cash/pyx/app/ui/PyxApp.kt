@@ -7,7 +7,7 @@ import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.material3.*
@@ -291,7 +291,8 @@ fun PyxApp(
                         HomeContent(state, connection, refreshStatus, fiatBalance, recovery, recoveryExpiry, balanceMasked, { balanceMasked = it },
                             { navController.open(WalletRoute.RECEIVE) }, { navController.open(WalletRoute.SEND) },
                             { navController.open(WalletRoute.SCAN) }, onRefreshHome, pendingIrreversibleOperation,
-                            { client, operationId -> navController.open(WalletRoute.ACTIVITY); onOpenActivityDetail(client, operationId) },
+                            onRefreshOperationReconciliation, activityState, onLoadActivityPage,
+                            onOpenActivityDetail, onDismissActivityDetail,
                             navController::open)
                     }
                     composable(WalletRoute.RECEIVE.route) {
@@ -308,7 +309,7 @@ fun PyxApp(
                             else { onClassify(frame); ScanFrameDecision.HANDLING }
                         }, progressFrames = ecashDecodeProgress)
                     }
-                    listOf(WalletRoute.ACTIVITY, WalletRoute.WALLETS, WalletRoute.DETAILS, WalletRoute.GUARDIANS,
+                    listOf(WalletRoute.WALLETS, WalletRoute.DETAILS, WalletRoute.GUARDIANS,
                         WalletRoute.SETTINGS, WalletRoute.CURRENCY, WalletRoute.CONTACTS,
                         WalletRoute.ADDRESSES, WalletRoute.ACCESS, WalletRoute.SEED_BACKUP).forEach { route ->
                         composable(route.route) {
@@ -320,8 +321,7 @@ fun PyxApp(
                                 onOperation, onClearOperation, biometricAvailable, biometricEnabled, onBiometricToggle, onBackup,
                                 contactsState, onClearContactsMessage, connection, federationState, recovery, recoveryExpiry,
                                 currencySettingsState, onClearCurrencyMessage, addresses, onClassify, pendingIrreversibleOperation,
-                                onRefreshOperationReconciliation, activityState, onLoadActivityPage,
-                                onOpenActivityDetail, onDismissActivityDetail)
+                                onRefreshOperationReconciliation)
                         }
                     }
                     listOf(WalletRoute.JOIN, WalletRoute.RECOVER).forEach { route ->
@@ -529,15 +529,37 @@ private fun HomeContent(
     scan: () -> Unit,
     refresh: () -> Unit,
     pendingIrreversibleOperation: cash.pyx.app.security.PendingIrreversibleOperation?,
-    paymentDetails: (Long, String) -> Unit,
+    refreshReconciliation: () -> Unit,
+    activityState: ActivityState,
+    loadActivityPage: (Long, Boolean) -> Unit,
+    openActivityDetail: (Long, String) -> Unit,
+    dismissActivityDetail: () -> Unit,
     navigate: (WalletRoute) -> Unit,
 ) {
     val wallet = state.snapshot.selected
     val listState = rememberLazyListState()
+    val scrollScope = rememberCoroutineScope()
     var collapsed by remember { mutableStateOf(false) }
+    var scrolledFar by remember { mutableStateOf(false) }
     LaunchedEffect(listState) {
         snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }.collect { (index, offset) ->
             collapsed = index > 0 || offset > 48
+            // The scan FAB swaps for the jump-to-top pill once the balance card is gone.
+            scrolledFar = index >= 2
+        }
+    }
+    LaunchedEffect(wallet?.clientHandle) {
+        wallet?.let { loadActivityPage(it.clientHandle, false) }
+    }
+    // Infinite scroll: request the next page whenever the viewport nears the list
+    // tail. ActivityStateOwner drops redundant calls while loading or exhausted.
+    LaunchedEffect(listState, wallet?.clientHandle) {
+        val client = wallet?.clientHandle ?: return@LaunchedEffect
+        snapshotFlow {
+            val info = listState.layoutInfo
+            (info.visibleItemsInfo.lastOrNull()?.index ?: 0) to info.totalItemsCount
+        }.collect { (last, total) ->
+            if (total > 0 && last >= total - 4) loadActivityPage(client, false)
         }
     }
     val balanceText = HomePresentation.balanceText(wallet?.balanceSat ?: 0, balanceMasked)
@@ -612,24 +634,6 @@ private fun HomeContent(
                 }
             }
         }
-        item(key = "wallet_row") {
-            CardRow(
-                title = wallet?.name ?: "No federation selected",
-                subtitle = HomePresentation.connectionDetail(connection),
-                chevron = true,
-                onClick = { navigate(WalletRoute.WALLETS) },
-                trailing = {
-                    StatusDot(
-                        when {
-                            connection == null -> PyxFaint
-                            connection.onlineCount >= connection.totalCount -> PyxGreen
-                            connection.onlineCount >= connection.requiredCount -> PyxAmber
-                            else -> PyxRed
-                        },
-                    )
-                },
-            )
-        }
         if (recoveryExpiry?.hasPendingRecoveries == true || recovery != null) item {
             val complete = recovery?.aggregateComplete ?: 0
             val total = recovery?.aggregateTotal ?: 0
@@ -661,7 +665,7 @@ private fun HomeContent(
                 CardRow(
                     title = "Payment reconciliation required",
                     subtitle = reconciliationMessage(pendingIrreversibleOperation),
-                    trailing = { PyxTextLink("Review", { navigate(WalletRoute.ACTIVITY) }) },
+                    trailing = { PyxTextLink("Check status", refreshReconciliation) },
                 )
                 Box(Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
             }
@@ -672,23 +676,65 @@ private fun HomeContent(
                 PyxGhostButton("Recover federation", { navigate(WalletRoute.RECOVER) }, Modifier.fillMaxWidth())
             }
         }
-        item(key = "activity_section") {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                SectionLabel("Activity", Modifier.weight(1f))
-                PyxTextLink("See all", { navigate(WalletRoute.ACTIVITY) })
-            }
-        }
-        if (wallet == null || wallet.payments.isEmpty()) {
-            item(key = "activity_empty") { Text("No recent payments", style = PyxType.body, color = PyxMuted) }
-        } else {
-            items(wallet.payments, key = ActivityPresentation::itemKey) { payment ->
-                PaymentRow(payment) { paymentDetails(wallet.clientHandle, payment.operationId) }
-            }
-        }
-        item(key = "home_footer") {
-            Column {
-                PyxTextLink("Refresh wallet", refresh, Modifier.fillMaxWidth())
-                Spacer(Modifier.height(4.dp))
+        if (wallet != null) {
+            when {
+                !activityState.initialized && activityState.error != null -> item(key = "activity_error") {
+                    Column {
+                        Text(activityState.error, style = PyxType.body, color = PyxRed,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
+                        PyxTextLink("Retry", { loadActivityPage(wallet.clientHandle, true) })
+                    }
+                }
+                !activityState.initialized -> item(key = "activity_loading") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(24.dp), color = PyxOrange)
+                        Text("Loading activity…", Modifier.padding(start = 12.dp), style = PyxType.body, color = PyxMuted)
+                    }
+                }
+                activityState.payments.isEmpty() -> item(key = "activity_empty") {
+                    Column(Modifier.fillMaxWidth().padding(top = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            Modifier.size(54.dp).background(PyxSurface2, RoundedCornerShape(16.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(PyxIcons.Transfers, contentDescription = null, tint = PyxMuted, modifier = Modifier.size(22.dp))
+                        }
+                        Text("No transaction history yet", style = PyxType.rowTitle, color = PyxMuted,
+                            modifier = Modifier.padding(top = 14.dp))
+                    }
+                }
+                else -> {
+                    ActivityPresentation.group(activityState.payments).forEach { day ->
+                        item(key = "day_${day.date}") {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                SectionLabel(ActivityPresentation.dayLabel(day.date), Modifier.padding(end = 14.dp))
+                                Box(Modifier.weight(1f)) { PyxDivider() }
+                            }
+                        }
+                        itemsIndexed(day.payments, key = { _, payment -> ActivityPresentation.itemKey(payment) }) { index, payment ->
+                            PaymentRow(payment, balanceMasked, showDivider = index < day.payments.lastIndex) {
+                                openActivityDetail(wallet.clientHandle, payment.operationId)
+                            }
+                        }
+                    }
+                    if (activityState.error != null) item(key = "activity_page_error") {
+                        Text(activityState.error, style = PyxType.body, color = PyxRed,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
+                    }
+                    when {
+                        activityState.loading -> item(key = "activity_paging") {
+                            Box(Modifier.fillMaxWidth().padding(vertical = 14.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(Modifier.size(22.dp), color = PyxOrange)
+                            }
+                        }
+                        activityState.nextCursor == null -> item(key = "activity_end") {
+                            Text("End of history", style = PyxType.rowSub, color = PyxFaint,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp))
+                        }
+                        else -> Unit
+                    }
+                }
             }
         }
         item(key = "home_bottom_spacer") { Spacer(Modifier.height(72.dp)) }
@@ -696,7 +742,9 @@ private fun HomeContent(
         AnimatedVisibility(visible = collapsed, modifier = Modifier.align(Alignment.TopCenter)) {
             Surface(color = PyxSurface, border = androidx.compose.foundation.BorderStroke(1.dp, PyxBorder), modifier = Modifier.fillMaxWidth()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 4.dp)
+                    Modifier.fillMaxWidth()
+                        .clickable(onClickLabel = "Back to top") { scrollScope.launch { listState.animateScrollToItem(0) } }
+                        .padding(vertical = 10.dp, horizontal = 4.dp)
                         .testTag("balance_header_collapsed")
                         .semantics {
                             stateDescription = "Collapsed balance header"
@@ -706,17 +754,34 @@ private fun HomeContent(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     BtcBadge(size = 24.dp)
-                    Text(wallet?.name ?: "No federation selected", style = PyxType.rowTitle, color = PyxText, modifier = Modifier.weight(1f))
                     Text(balanceText, style = PyxType.keyValue, color = PyxText)
                 }
             }
         }
-        if (wallet != null) PyxFab(
+        // The scan FAB and the jump-to-top pill share the bottom-centre slot.
+        if (wallet != null && !scrolledFar) PyxFab(
             PyxIcons.Scan,
             onClick = scan,
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp),
             semanticsModifier = Modifier.semantics { text = AnnotatedString("Scan") },
         )
+        if (wallet != null && scrolledFar) Surface(
+            onClick = { scrollScope.launch { listState.animateScrollToItem(0) } },
+            shape = RoundedCornerShape(999.dp),
+            color = PyxSurface2,
+            border = androidx.compose.foundation.BorderStroke(1.dp, cash.pyx.app.ui.theme.PyxBorderStrong),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
+        ) {
+            Row(
+                Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                Icon(PyxIcons.ArrowUp, contentDescription = null, tint = PyxText, modifier = Modifier.size(14.dp))
+                Text("Top", style = PyxType.rowSub.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = PyxText)
+            }
+        }
+        PaymentDetailSheet(activityState.detail, balanceMasked, dismissActivityDetail)
     }
 }
 
@@ -752,68 +817,15 @@ private fun ManageContent(
     sendContact: (String) -> Unit,
     pendingIrreversibleOperation: cash.pyx.app.security.PendingIrreversibleOperation?,
     refreshOperationReconciliation: () -> Unit,
-    activityState: ActivityState,
-    loadActivityPage: (Long, Boolean) -> Unit,
-    openActivityDetail: (Long, String) -> Unit,
-    dismissActivityDetail: () -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
     var confirmationRoute by remember { mutableStateOf<WalletModalRoute?>(null) }
     val addressMutationGate = remember { ConfirmationActionGate() }
     val selected = state.snapshot.selected
     val operationModalRoute = if (operation is WalletOperation.SuccessorInvite) WalletModalRoute.SUCCESSOR_REVIEW else null
-    LaunchedEffect(screen, selected?.clientHandle) {
-        if (screen == WalletRoute.ACTIVITY) selected?.let { loadActivityPage(it.clientHandle, false) }
-    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
         PyxTopBar(screen.title, onBack = { clear(); back() }, titleSemantics = Modifier.semantics { heading() })
         when (screen) {
-            WalletRoute.ACTIVITY -> {
-                if (pendingIrreversibleOperation != null) {
-                    PyxCard {
-                        Text("Check for a previous payment", style = PyxType.rowTitle, color = PyxText)
-                        Text(reconciliationMessage(pendingIrreversibleOperation), style = PyxType.rowSub, color = PyxMuted,
-                            modifier = Modifier.padding(vertical = 8.dp))
-                        PyxPrimaryButton("Check status", refreshOperationReconciliation)
-                    }
-                }
-                PyxTextLink("Refresh activity", { selected?.let { loadActivityPage(it.clientHandle, true) } }, enabled = !activityState.loading)
-                when {
-                    activityState.loading && !activityState.initialized -> Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(24.dp), color = PyxOrange)
-                        Text("Loading activity…", Modifier.padding(start = 12.dp), style = PyxType.body, color = PyxMuted)
-                    }
-                    activityState.error != null && !activityState.initialized -> Text(activityState.error, style = PyxType.body, color = PyxRed,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
-                    activityState.initialized && activityState.payments.isEmpty() -> Text("No payment activity yet", style = PyxType.body, color = PyxMuted)
-                    else -> ActivityPresentation.group(activityState.payments).forEach { day ->
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            SectionLabel(day.date.toString(), Modifier.padding(end = 12.dp))
-                            PyxDivider()
-                        }
-                        day.payments.forEach { payment -> key(ActivityPresentation.itemKey(payment)) {
-                            PaymentRow(payment) { selected?.let { openActivityDetail(it.clientHandle, payment.operationId) } }
-                        } }
-                    }
-                }
-                activityState.error?.takeIf { activityState.initialized }?.let {
-                    Text(it, style = PyxType.body, color = PyxRed, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
-                }
-                when (val detail = activityState.detail) {
-                    is ActivityDetailState.Loading -> CircularProgressIndicator(Modifier.size(24.dp), color = PyxOrange)
-                    is ActivityDetailState.Error -> Text(detail.message, style = PyxType.body, color = PyxRed,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
-                    else -> Unit
-                }
-                if (activityState.initialized && activityState.nextCursor != null) {
-                    PyxGhostButton(
-                        if (activityState.loading) "Loading…" else "Load more",
-                        { selected?.let { loadActivityPage(it.clientHandle, false) } },
-                        Modifier.fillMaxWidth().padding(top = 10.dp),
-                        enabled = !activityState.loading,
-                    )
-                }
-            }
             WalletRoute.WALLETS -> {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     state.snapshot.federations.forEach { federation ->
@@ -1180,19 +1192,12 @@ private fun ManageContent(
             }
             else -> Unit // ManageContent is registered only for management destinations.
         }
-        when {
-            activityState.detail is ActivityDetailState.Open -> PaymentDetailDialog(
-                (activityState.detail as ActivityDetailState.Open).payment,
-                dismissActivityDetail,
-            )
-            screen == WalletRoute.ACTIVITY -> Unit
-            else -> when (operation) {
+        when (operation) {
             WalletOperation.Submitting -> CircularProgressIndicator()
             is WalletOperation.Success -> SensitiveResult(operation, operation.sensitive, clear)
             is WalletOperation.Failure -> Text(operation.message, color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
             else -> Unit
-            }
         }
     }
     if (confirmationRoute == WalletModalRoute.LEAVE_FEDERATION) AlertDialog(onDismissRequest = { confirmationRoute = null }, title = { Text("Leave federation?") },
@@ -1238,33 +1243,187 @@ private fun FeatureMessageContent(message: cash.pyx.app.data.FeatureMessage?, cl
     }
 }
 
+/** Prototype tx-detail bottom sheet: centred head, status pill, drow cards, wrench-gated technical rows. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PaymentDetailDialog(payment: Payment, dismiss: () -> Unit) {
-    val fields = ActivityPresentation.technicalFields(payment)
-    val sensitive = fields.any { it.sensitive }
-    if (sensitive) SecureScreen()
-    val context = androidx.compose.ui.platform.LocalContext.current
-    AlertDialog(
+private fun PaymentDetailSheet(detail: ActivityDetailState, masked: Boolean, dismiss: () -> Unit) {
+    if (detail is ActivityDetailState.Closed) return
+    ModalBottomSheet(
         onDismissRequest = dismiss,
-        title = { Text("Payment details") },
-        text = { Column(Modifier.verticalScroll(rememberScrollState())) {
-            Text("${payment.type.name.lowercase().replaceFirstChar(Char::uppercase)} · ${payment.status.name.lowercase()}")
-            Text(ActivityPresentation.amount(payment), style = MaterialTheme.typography.titleLarge)
-            ActivityPresentation.historicalFiat(payment)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            payment.feeSat?.let { Text("Fee: $it sats") }
-            Text("Direction: ${payment.direction.name.lowercase()}")
-            Text("Date: ${ActivityPresentation.timestamp(payment)}")
-            Text("Operation ID: ${payment.operationId}")
-            fields.forEach { field -> Column(Modifier.padding(top = 12.dp)) {
-                Text(field.label, style = MaterialTheme.typography.labelMedium)
-                if (field.copyable) {
-                    SelectionContainer { Text(field.value) }
-                    ClipboardCopyButton(context, field.label, field.value, sensitive = false, buttonLabel = "Copy ${field.label}")
-                } else Text(field.value)
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = PyxSurface,
+        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+        scrimColor = Color(0xFF040609).copy(alpha = 0.55f),
+        dragHandle = {
+            Box(
+                Modifier.padding(top = 6.dp, bottom = 10.dp)
+                    .size(width = 40.dp, height = 4.dp)
+                    .background(cash.pyx.app.ui.theme.PyxBorderStrong, RoundedCornerShape(2.dp)),
+            )
+        },
+        modifier = Modifier.testTag("payment_detail_sheet"),
+    ) {
+        when (detail) {
+            is ActivityDetailState.Loading -> Box(
+                Modifier.fillMaxWidth().padding(vertical = 48.dp),
+                contentAlignment = Alignment.Center,
+            ) { CircularProgressIndicator(color = PyxOrange, trackColor = PyxSurface2) }
+            is ActivityDetailState.Error -> Text(
+                detail.message, style = PyxType.body, color = PyxRed,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 40.dp)
+                    .semantics { liveRegion = LiveRegionMode.Assertive },
+            )
+            is ActivityDetailState.Open -> PaymentDetailSheetContent(detail.payment, masked)
+            ActivityDetailState.Closed -> Unit
+        }
+    }
+}
+
+@Composable
+private fun PaymentDetailSheetContent(payment: Payment, masked: Boolean) {
+    val fields = ActivityPresentation.technicalFields(payment)
+    var showTech by remember(payment.operationId) { mutableStateOf(false) }
+    if (showTech && fields.any { it.sensitive }) SecureScreen()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val incoming = payment.direction == cash.pyx.app.nativeapi.PaymentDirection.INCOMING
+    val (statusLabel, statusColor) = when (payment.status) {
+        cash.pyx.app.nativeapi.PaymentStatus.SUCCEEDED -> "Confirmed" to PyxGreen
+        cash.pyx.app.nativeapi.PaymentStatus.PENDING -> "Pending" to PyxAmber
+        cash.pyx.app.nativeapi.PaymentStatus.FAILED -> "Failed" to cash.pyx.app.ui.theme.PyxBurnt
+    }
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp).padding(bottom = 30.dp)) {
+        Box(Modifier.fillMaxWidth()) {
+            PyxIconButton(
+                PyxIcons.Wrench,
+                onClick = { showTech = !showTech },
+                tint = if (showTech) PyxOrange else PyxText,
+                borderColor = if (showTech) PyxOrange else PyxBorder,
+                modifier = Modifier.align(Alignment.TopEnd).semantics {
+                    text = AnnotatedString("Technical details")
+                    stateDescription = if (showTech) "Shown" else "Hidden"
+                },
+            )
+            Column(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    Modifier.size(54.dp).background(PyxSurface2, RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (incoming) PyxIcons.ArrowDown else PyxIcons.ArrowUp,
+                        contentDescription = null,
+                        tint = if (incoming) PyxGreen else PyxMuted,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Text(
+                    "${paymentTypeLabel(payment.type)} ${if (incoming) "received" else "sent"}",
+                    style = PyxType.centeredTitle, color = PyxText, modifier = Modifier.padding(top = 12.dp),
+                )
+                // One text node whose full string stays the amount exactly, with the
+                // trailing unit rendered small and muted like the prototype big-amt.
+                val amountText = if (masked) "•••" else ActivityPresentation.amount(payment)
+                val styledAmount = buildAnnotatedString {
+                    val unitStart = amountText.lastIndexOf(" sat")
+                    if (unitStart <= 0) append(amountText)
+                    else {
+                        append(amountText.substring(0, unitStart))
+                        withStyle(SpanStyle(fontSize = 16.sp, color = PyxMuted)) { append(amountText.substring(unitStart)) }
+                    }
+                }
+                Text(
+                    styledAmount,
+                    style = PyxType.bigAmount,
+                    color = if (incoming) PyxGreen else PyxRed,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                if (!masked) ActivityPresentation.historicalFiat(payment)?.let {
+                    Text(it, style = PyxType.fiat, color = PyxFaint, modifier = Modifier.padding(top = 2.dp))
+                }
+                Row(
+                    Modifier.padding(top = 10.dp)
+                        .background(PyxSurface2, RoundedCornerShape(8.dp))
+                        .border(1.dp, PyxBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    StatusDot(statusColor)
+                    Text(statusLabel, style = PyxType.rowSub.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = PyxText)
+                }
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        PyxCard(padding = 0.dp) { Column(Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
+            DetailSheetRow("Date", ActivityPresentation.timestamp(payment))
+            payment.feeSat?.let { PyxDivider(); DetailSheetRow("Fee", if (masked) "•••" else "$it sats") }
+        } }
+        if (showTech) {
+            var announcement by remember { mutableStateOf<String?>(null) }
+            Spacer(Modifier.height(12.dp))
+            PyxCard(padding = 0.dp) { Column(Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
+                Text("Technical details".uppercase(), style = PyxType.sectionLabel, color = PyxFaint,
+                    modifier = Modifier.padding(top = 12.dp).semantics { text = AnnotatedString("Technical details") })
+                fields.forEach { field ->
+                    PyxDivider()
+                    if (field.copyable) {
+                        DetailSheetRow(field.label, field.value, mono = true) {
+                            announcement = QrPayload.copy(context, field.label, field.value, sensitive = false).announcement
+                        }
+                    } else {
+                        Column(Modifier.padding(vertical = 12.dp)) {
+                            Text(field.label.uppercase(), style = PyxType.sectionLabel, color = PyxFaint,
+                                modifier = Modifier.semantics { text = AnnotatedString(field.label) })
+                            Text(field.value, style = PyxType.rowSub.copy(fontFamily = PyxType.inputMono.fontFamily), color = PyxText,
+                                modifier = Modifier.padding(top = 6.dp))
+                        }
+                    }
+                }
+                PyxDivider()
+                DetailSheetRow("Operation ID", payment.operationId, mono = true) {
+                    announcement = QrPayload.copy(context, "Operation ID", payment.operationId, sensitive = false).announcement
+                }
             } }
-        } },
-        confirmButton = { TextButton(onClick = dismiss) { Text("Done") } },
-    )
+            announcement?.let {
+                Text(it, style = PyxType.rowSub, color = PyxMuted,
+                    modifier = Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite })
+            }
+        }
+    }
+}
+
+/** One prototype "drow": small uppercase key, right-aligned value; tappable copy when [onCopy] set. */
+@Composable
+private fun DetailSheetRow(label: String, value: String, mono: Boolean = false, onCopy: (() -> Unit)? = null) {
+    Row(
+        Modifier.fillMaxWidth()
+            .let { if (onCopy != null) it.clickable(onClickLabel = "Copy $label") { onCopy() } else it }
+            .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label.uppercase(), style = PyxType.sectionLabel, color = PyxFaint,
+            modifier = Modifier.semantics { text = AnnotatedString(label) })
+        Spacer(Modifier.width(16.dp))
+        Text(
+            value,
+            style = if (mono) PyxType.inputMono.copy(fontSize = 13.sp) else PyxType.keyValue,
+            color = PyxText,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            modifier = Modifier.weight(1f),
+        )
+        if (onCopy != null) {
+            Spacer(Modifier.width(8.dp))
+            Icon(PyxIcons.Copy, contentDescription = null, tint = PyxMuted, modifier = Modifier.size(14.dp))
+        }
+    }
+}
+
+private fun paymentTypeLabel(type: cash.pyx.app.nativeapi.PaymentType): String = when (type) {
+    cash.pyx.app.nativeapi.PaymentType.LIGHTNING -> "Lightning"
+    cash.pyx.app.nativeapi.PaymentType.ONCHAIN -> "On-chain"
+    cash.pyx.app.nativeapi.PaymentType.ECASH -> "Ecash"
 }
 
 @Composable
@@ -1686,33 +1845,61 @@ private fun EcashQrResult(payload: String, frame: String?, start: (String, Boole
 }
 
 @Composable
-private fun PaymentRow(payment: Payment, onClick: () -> Unit = {}) {
-    val incoming = payment.direction.name == "INCOMING"
+private fun PaymentRow(payment: Payment, masked: Boolean = false, showDivider: Boolean = false, onClick: () -> Unit = {}) {
+    val incoming = payment.direction == cash.pyx.app.nativeapi.PaymentDirection.INCOMING
+    Column {
     Row(
         Modifier.fillMaxWidth().minimumInteractiveComponentSize().clickable(onClick = onClick).padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            Modifier.size(42.dp).background(PyxSurface2, RoundedCornerShape(11.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            androidx.compose.material3.Icon(
-                if (incoming) PyxIcons.ArrowDown else PyxIcons.ArrowUp,
-                contentDescription = null,
-                tint = if (incoming) PyxGreen else PyxMuted,
-                modifier = Modifier.size(18.dp),
-            )
+        Box(Modifier.size(42.dp)) {
+            Box(
+                Modifier.size(42.dp).background(PyxSurface2, RoundedCornerShape(11.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                androidx.compose.material3.Icon(
+                    if (incoming) PyxIcons.ArrowDown else PyxIcons.ArrowUp,
+                    contentDescription = null,
+                    tint = if (incoming) PyxGreen else PyxMuted,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            // Small ₿ badge on the icon corner, occluding the icon box like the prototype.
+            Box(
+                Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = 4.dp).size(17.dp)
+                    .border(2.dp, PyxBackground, RoundedCornerShape(5.dp))
+                    .padding(2.dp)
+                    .background(PyxOrange, RoundedCornerShape(3.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("₿", style = PyxType.rowSub.copy(fontSize = 8.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = cash.pyx.app.ui.theme.PyxOnOrange)
+            }
         }
         Column(Modifier.weight(1f)) {
-            Text(payment.type.name.lowercase().replaceFirstChar(Char::uppercase), style = PyxType.rowTitle, color = PyxText)
-            Text(payment.status.name.lowercase(), style = PyxType.rowSub, color = PyxMuted)
+            Text(
+                "${paymentTypeLabel(payment.type)} ${if (incoming) "received" else "sent"}",
+                style = PyxType.rowTitle, color = PyxText,
+            )
+            when (payment.status) {
+                cash.pyx.app.nativeapi.PaymentStatus.PENDING -> Text("Pending", style = PyxType.rowSub, color = PyxAmber)
+                cash.pyx.app.nativeapi.PaymentStatus.FAILED -> Text("Failed", style = PyxType.rowSub, color = PyxRed)
+                else -> Text(ActivityPresentation.time(payment), style = PyxType.rowSub, color = PyxMuted)
+            }
         }
-        Text(
-            "${if (incoming) "+" else "−"}${payment.amountSat} sats",
-            style = PyxType.rowAmount,
-            color = if (incoming) PyxGreen else PyxRed,
-        )
+        // Full string stays exactly the amount; the unit renders small and faint.
+        val amountText = if (masked) "•••" else ActivityPresentation.amount(payment)
+        val styledRowAmount = buildAnnotatedString {
+            val unitStart = amountText.lastIndexOf(" sat")
+            if (unitStart <= 0) append(amountText)
+            else {
+                append(amountText.substring(0, unitStart))
+                withStyle(SpanStyle(fontSize = 11.sp, color = PyxFaint)) { append(amountText.substring(unitStart)) }
+            }
+        }
+        Text(styledRowAmount, style = PyxType.rowAmount, color = if (incoming) PyxGreen else PyxRed)
+    }
+    if (showDivider) PyxDivider()
     }
 }
 

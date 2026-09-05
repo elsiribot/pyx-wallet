@@ -11,7 +11,7 @@ sealed interface PyxRoute {
 /** A payload-free, exhaustive model of destinations in the unlocked wallet. */
 enum class WalletRoute(override val route: String, val title: String) : PyxRoute {
     HOME("home", "Home"), RECEIVE("receive", "Receive"), SEND("send", "Send"),
-    SCAN("scan", "Scan"), ACTIVITY("activity", "Activity"), WALLETS("wallets", "Wallets"),
+    SCAN("scan", "Scan"), WALLETS("wallets", "Wallets"),
     DETAILS("details", "Details"), GUARDIANS("guardians", "Guardians"),
     SETTINGS("settings", "Settings"), CURRENCY("currency", "Currency"), CONTACTS("contacts", "Contacts"),
     ADDRESSES("addresses", "Addresses"), ACCESS("access", "Access"),

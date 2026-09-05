@@ -41,6 +41,14 @@ private fun ScreenshotFixture(fixture: String) = when (fixture) {
         ),
         fiatBalance = FiatDisplay("25.00", "USD", "US Dollar", "\$", 2),
         refreshStatus = HomeRefreshStatus.Degraded(1_788_000_000_000L, 2),
+        activityState = syntheticActivity(),
+    )
+    "home_tx_sheet" -> PyxApp(
+        state = syntheticHome(),
+        fiatBalance = FiatDisplay("25.00", "USD", "US Dollar", "\$", 2),
+        activityState = syntheticActivity().let { activity ->
+            activity.copy(detail = cash.pyx.app.data.ActivityDetailState.Open(activity.payments[1]))
+        },
     )
     "send_receive_confirmation" -> FixtureList("Send and receive review — synthetic") {
         item { SafetyCard("Receive Lightning", "1,250 sats · fee 5 sats", "Synthetic request · NOT PAYABLE") }
@@ -67,12 +75,33 @@ private fun syntheticHome() = BootstrapState.Home(
         federations = listOf(FederationSummary("synthetic-fed", "Example federation", 3)),
         selected = SelectedWallet(
             clientHandle = 3L, federationId = "synthetic-fed", name = "Example federation", balanceSat = 50_000L,
-            payments = listOf(
-                Payment("synthetic-in", PaymentDirection.INCOMING, PaymentType.LIGHTNING, 1_250L, timestampMillis = 1_788_000_000_000L, status = PaymentStatus.SUCCEEDED),
-                Payment("synthetic-out", PaymentDirection.OUTGOING, PaymentType.ONCHAIN, 8_000L, feeSat = 12L, timestampMillis = 1_787_999_000_000L, status = PaymentStatus.PENDING),
-            ),
+            payments = emptyList(),
         ),
     ),
+)
+
+/** Multi-day synthetic history exercising pending/failed rows and the detail sheet. */
+private fun syntheticActivity() = cash.pyx.app.data.ActivityState(
+    clientHandle = 3L,
+    payments = listOf(
+        Payment("synthetic-pending", PaymentDirection.OUTGOING, PaymentType.ONCHAIN, 8_000L, feeSat = 12L,
+            timestampMillis = 1_788_000_500_000L, status = PaymentStatus.PENDING,
+            txid = "f3a9c1d7e5b24680aa55cc11dd22ee33ff44aa55bb66cc77dd88ee99ff001122",
+            address = "bc1qsyntheticfixtureaddressxu3tq7"),
+        Payment("synthetic-in", PaymentDirection.INCOMING, PaymentType.LIGHTNING, 1_250L,
+            timestampMillis = 1_788_000_000_000L, status = PaymentStatus.SUCCEEDED,
+            fiat = FiatAmount("0.75", "USD")),
+        Payment("synthetic-ecash", PaymentDirection.INCOMING, PaymentType.ECASH, 21_000L,
+            timestampMillis = 1_787_950_000_000L, status = PaymentStatus.SUCCEEDED),
+        Payment("synthetic-failed", PaymentDirection.OUTGOING, PaymentType.LIGHTNING, 4_400L,
+            timestampMillis = 1_787_900_000_000L, status = PaymentStatus.FAILED),
+        Payment("synthetic-old-1", PaymentDirection.OUTGOING, PaymentType.LIGHTNING, 900L, feeSat = 2L,
+            timestampMillis = 1_787_800_000_000L, status = PaymentStatus.SUCCEEDED),
+        Payment("synthetic-old-2", PaymentDirection.INCOMING, PaymentType.ONCHAIN, 105_000L,
+            timestampMillis = 1_787_700_000_000L, status = PaymentStatus.SUCCEEDED),
+    ),
+    nextCursor = null,
+    initialized = true,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

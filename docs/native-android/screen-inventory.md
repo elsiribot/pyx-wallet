@@ -26,7 +26,7 @@ Prototype names refer to `docs/design/prototype.html`; where no exact prototype 
 | `confirm_onchain_send_screen` | on-chain quote ready | `onchain_send`; submitting/success/error; never auto-send. |
 | `ecash_amount_screen` | receive mode: create ecash | `ecash_send`; invalid/insufficient amount, creating/error, then token display. |
 | `display_ecash_screen` | generated or scanned token | token QR/copy; `ecash_receive` when redeeming; redeeming/success/error. Token is highly sensitive. |
-| `payment_history_screen` | prototype activity / See all | supplied history; newest-first, empty state and payment detail sheet. |
+| `payment_history_screen` | inline on home (2026-09-05: no separate screen; paginated infinite scroll under the collapsing balance card) | supplied history; newest-first, day-grouped, empty state and payment detail bottom sheet. |
 | `connection_status_screen` | guardian/status header | federation name/stats and connection stream; connecting, partial quorum/offline, stats unavailable. |
 | `settings_screen` | prototype settings | currency, federations, seed phrase; list/load error; routes to currency, contacts, backup. |
 | `select_currency_screen` | settings currency | `list_fiat_currencies`, factory get/set currency; searchable list, saving/error. |
