@@ -84,4 +84,10 @@ object PyxIcons {
         "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z",
     )
     val Transfers = strokeIcon("transfers", "M7 10l-3 3 3 3", "M4 13h13", "M17 8l3-3-3-3", "M20 5H8")
+    val ChevronDown = strokeIcon("chevron-down", "M6 9l6 6 6-6")
+    val QrGlyph = strokeIcon(
+        "qr-glyph",
+        "M3 3h7v7H3z", "M14 3h7v7h-7z", "M3 14h7v7H3z",
+        "M14 14h3v3", "M20 14v.01", "M14 20v.01", "M20 20v.01", "M17 17v3",
+    )
 }

@@ -43,6 +43,14 @@ private fun ScreenshotFixture(fixture: String) = when (fixture) {
         refreshStatus = HomeRefreshStatus.Degraded(1_788_000_000_000L, 2),
         activityState = syntheticActivity(),
     )
+    "receive_lnurl" -> PyxApp(
+        state = syntheticHome(),
+        fiatBalance = FiatDisplay("25.00", "USD", "US Dollar", "\$", 2),
+        operation = cash.pyx.app.ui.WalletOperation.Success(
+            "LNURL receive",
+            "lnurl1dp68gurn8ghj7urjdajzuun9vd6hyunfdenkgtnkv95nze3wdaexwtmvdemrztmsv9ukxmmyv4ej7wf58pjrse34xg6rwc3e8ycx2d34xcckywpcvsmkyenzvvck2dnzxccrvc3k893kzwpkv93nycmrvd3rsdf3xesnyv3nxscrwefsvdjq8xmtrv",
+        ),
+    )
     "home_tx_sheet" -> PyxApp(
         state = syntheticHome(),
         fiatBalance = FiatDisplay("25.00", "USD", "US Dollar", "\$", 2),

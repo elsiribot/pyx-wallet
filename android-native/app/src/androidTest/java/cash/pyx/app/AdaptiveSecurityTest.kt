@@ -148,7 +148,10 @@ class AdaptiveSecurityTest {
     fun everyTransferTabKeepsItsPrimaryActionReachableAtLargeTextOnNarrowDisplay() {
         setAdaptiveHome(width = 280, height = 600, fontScale = 2f)
         waitForHome()
-        listOf("Receive" to listOf("Lightning" to "Create invoice", "On-chain" to "Get address", "Ecash" to "Claim ecash"),
+        // Receive has no per-tab submit buttons any more: the code is generated live,
+        // so the reachable primary affordances are the amount unit chip (Lightning /
+        // On-Chain) and the claim action (Ecash).
+        listOf("Receive" to listOf("Lightning" to "SATS", "On-Chain" to "SATS", "Ecash" to "Claim ecash"),
             "Send" to listOf("Lightning" to "Review and send", "On-chain" to "Review and send", "Ecash" to "Review and send"),
         ).forEach { (destination, tabs) ->
             tabs.forEach { (tab, action) ->

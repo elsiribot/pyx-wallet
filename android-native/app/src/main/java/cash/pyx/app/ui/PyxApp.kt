@@ -26,6 +26,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -296,11 +297,13 @@ fun PyxApp(
                             navController::open)
                     }
                     composable(WalletRoute.RECEIVE.route) {
-                        TransferContent(true, state, operation, routedInput?.payload, routedInput?.type,
-                            { routedInput = null; navController.returnHome() }, onOperation, onClearOperation, ecashFrame, onStartEcashDisplay, onStopEcashDisplay)
+                        ReceiveContent(state, operation, routedInput?.payload, routedInput?.type,
+                            { routedInput = null; navController.returnHome() }, onOperation, onClearOperation,
+                            ecashFrame, onStartEcashDisplay, onStopEcashDisplay, addresses,
+                            { navController.open(WalletRoute.SCAN) })
                     }
                     composable(WalletRoute.SEND.route) {
-                        TransferContent(false, state, operation, routedInput?.payload, routedInput?.type,
+                        TransferContent(state, operation, routedInput?.payload, routedInput?.type,
                             { routedInput = null; navController.returnHome() }, onOperation, onClearOperation, ecashFrame, onStartEcashDisplay, onStopEcashDisplay)
                     }
                     composable(WalletRoute.SCAN.route) {
@@ -1561,9 +1564,450 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 
 private enum class TransferAmountUnit { SATS, BTC, FIAT }
 
+/**
+ * Prototype receive screen: big live amount + unit chip, and a code that is always
+ * generated for the current state — reusable LNURL when amountless, a BOLT11
+ * invoice one second after typing stops, the reusable on-chain address (BIP21 once
+ * an amount is set). Ecash is received by scanning, so that tab leads with the scanner.
+ */
+@Composable
+private fun ReceiveContent(
+    state: BootstrapState.Home,
+    operation: WalletOperation,
+    initialPayload: String?,
+    initialType: cash.pyx.app.nativeapi.InputType?,
+    back: () -> Unit,
+    submit: (String, Long, String, Long) -> Unit,
+    clear: () -> Unit,
+    ecashFrame: String?,
+    startEcashDisplay: (String, Boolean) -> Unit,
+    stopEcashDisplay: () -> Unit,
+    addresses: List<cash.pyx.app.nativeapi.OnchainAddress>,
+    scan: () -> Unit,
+) {
+    val client = state.snapshot.selected?.clientHandle ?: return
+    var tab by remember(initialPayload, initialType) {
+        mutableIntStateOf(if (initialType == cash.pyx.app.nativeapi.InputType.ECASH) 2 else 0)
+    }
+    var ecashToken by remember(initialPayload) {
+        mutableStateOf(if (initialType == cash.pyx.app.nativeapi.InputType.ECASH) initialPayload.orEmpty() else "")
+    }
+    var amount by remember { mutableStateOf("") }
+    var unit by remember { mutableStateOf(TransferAmountUnit.SATS) }
+    var unitSheet by remember { mutableStateOf(false) }
+    var typing by remember { mutableStateOf(false) }
+    var convertedSats by remember { mutableStateOf<Long?>(null) }
+    val currentOperation by rememberUpdatedState(operation)
+    val currentAddresses by rememberUpdatedState(addresses)
+    LaunchedEffect(initialPayload, initialType) { clear() }
+    // Debounced generation, prototype-style: the reusable LNURL is requested as soon
+    // as Lightning is amountless; an invoice is requested one second after the last
+    // keystroke (fiat amounts convert to sats first, then chain into the invoice).
+    LaunchedEffect(tab, amount, unit, client) {
+        typing = false
+        if (tab == 2) return@LaunchedEffect
+        if (amount.isBlank()) {
+            convertedSats = null
+            val existing = currentOperation
+            if (tab == 0 &&
+                !(existing is WalletOperation.Success && existing.title == "LNURL receive") &&
+                existing !is WalletOperation.Submitting
+            ) {
+                clear(); submit("receive_lnurl", client, "", 0)
+            }
+            return@LaunchedEffect
+        }
+        // On-chain BIP21 with a sats/BTC amount derives locally; only fiat needs a round-trip.
+        if (tab == 1 && unit != TransferAmountUnit.FIAT) return@LaunchedEffect
+        if (tab == 0) typing = true
+        convertedSats = null
+        delay(1000)
+        typing = false
+        when (unit) {
+            TransferAmountUnit.FIAT ->
+                if (amount.toBigDecimalOrNull()?.signum() == 1) { clear(); submit("fiat_to_sats", client, amount, 0) }
+            TransferAmountUnit.BTC ->
+                BitcoinAmountPresentation.toSats(amount)?.takeIf { it > 0 }?.let { clear(); submit("receive_lightning", client, "", it) }
+            TransferAmountUnit.SATS ->
+                amount.toLongOrNull()?.takeIf { it > 0 }?.let { clear(); submit("receive_lightning", client, "", it) }
+        }
+    }
+    // The reusable address is fetched once: the newest known address is shown
+    // instantly, and one is generated only when the wallet has none yet.
+    LaunchedEffect(tab, client) {
+        if (tab != 1) return@LaunchedEffect
+        val existing = currentOperation
+        val known = currentAddresses.isNotEmpty() ||
+            (existing is WalletOperation.Success && existing.title == "On-chain address")
+        if (!known && existing !is WalletOperation.Submitting) { clear(); submit("receive_onchain", client, "", 0) }
+    }
+    LaunchedEffect(operation) {
+        val converted = operation as? WalletOperation.FiatConverted ?: return@LaunchedEffect
+        if (amount.isNotBlank() && unit == TransferAmountUnit.FIAT) {
+            convertedSats = converted.amountSat
+            if (tab == 0 && converted.amountSat > 0) submit("receive_lightning", client, "", converted.amountSat)
+        }
+    }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
+    ) {
+        PyxTopBar("Receive Bitcoin", onBack = back)
+        Row(
+            Modifier
+                .background(PyxSurface, RoundedCornerShape(10.dp))
+                .border(1.dp, PyxBorder, RoundedCornerShape(10.dp))
+                .padding(start = 8.dp, end = 13.dp, top = 7.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            BtcBadge(size = 24.dp)
+            Text("Bitcoin", style = PyxType.rowSub.copy(fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = PyxText)
+        }
+        Spacer(Modifier.height(14.dp))
+        PyxSegmented(listOf("Lightning", "On-Chain", "Ecash"), tab, { index -> tab = index; amount = ""; convertedSats = null; clear() })
+        if (tab == 2) {
+            EcashReceivePane(client, operation, ecashToken, { ecashToken = it }, submit, clear, scan, ecashFrame, startEcashDisplay, stopEcashDisplay)
+        } else {
+            // recv-amt-row: borderless display-type amount with the unit chip beside it.
+            Spacer(Modifier.height(30.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = amount,
+                    onValueChange = { value ->
+                        amount = if (unit == TransferAmountUnit.SATS) value.filter(Char::isDigit)
+                        else value.filter(BitcoinAmountPresentation::inputCharacterAllowed)
+                    },
+                    modifier = Modifier.width(IntrinsicSize.Min).widthIn(min = 34.dp).testTag("receive_amount"),
+                    textStyle = PyxType.bigAmount.copy(color = PyxText, textAlign = androidx.compose.ui.text.style.TextAlign.End),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(PyxOrange),
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = if (unit == TransferAmountUnit.SATS) androidx.compose.ui.text.input.KeyboardType.Number
+                        else androidx.compose.ui.text.input.KeyboardType.Decimal,
+                    ),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterEnd) {
+                            if (amount.isEmpty()) Text("0", style = PyxType.bigAmount, color = PyxFaint)
+                            inner()
+                        }
+                    },
+                )
+                Spacer(Modifier.width(12.dp))
+                Row(
+                    Modifier
+                        .background(PyxSurface2, RoundedCornerShape(10.dp))
+                        .border(1.dp, PyxBorder, RoundedCornerShape(10.dp))
+                        .clickable(onClickLabel = "Change unit") { unitSheet = true }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        when (unit) {
+                            TransferAmountUnit.SATS -> "SATS"
+                            TransferAmountUnit.BTC -> "BTC"
+                            TransferAmountUnit.FIAT -> state.snapshot.currencyCode
+                        },
+                        style = PyxType.keyValue.copy(fontSize = 14.sp), color = PyxMuted,
+                    )
+                    Icon(PyxIcons.ChevronDown, contentDescription = null, tint = PyxMuted, modifier = Modifier.size(13.dp))
+                }
+            }
+            // sats equivalent under the amount; reserved height so the QR never jumps
+            Text(
+                when {
+                    unit == TransferAmountUnit.BTC && amount.isNotBlank() ->
+                        BitcoinAmountPresentation.toSats(amount)?.let { "≈ ${LocalePresentation.integer(it)} sats" } ?: " "
+                    unit == TransferAmountUnit.FIAT && amount.isNotBlank() ->
+                        convertedSats?.let { "≈ ${LocalePresentation.integer(it)} sats" } ?: " "
+                    else -> " "
+                },
+                style = PyxType.fiat, color = PyxMuted,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 24.dp),
+            )
+            val success = operation as? WalletOperation.Success
+            val latestAddress = success?.takeIf { it.title == "On-chain address" }?.detail?.substringBefore("\n")
+                ?: addresses.maxByOrNull { it.tweakIndex }?.address
+            val hasAmount = amount.isNotBlank()
+            val payload: String? = when {
+                typing -> null
+                tab == 0 -> success?.takeIf {
+                    if (hasAmount) it.title == "Lightning invoice" else it.title == "LNURL receive"
+                }?.detail?.substringBefore("\n")
+                else -> latestAddress?.let { addr ->
+                    val sats = when (unit) {
+                        TransferAmountUnit.SATS -> amount.toLongOrNull()
+                        TransferAmountUnit.BTC -> BitcoinAmountPresentation.toSats(amount)
+                        TransferAmountUnit.FIAT -> convertedSats
+                    }
+                    if (sats != null && sats > 0) Bip21Presentation.uri(addr, sats) else addr
+                }
+            }
+            ReceiveQrZone(
+                payload = payload,
+                loading = operation is WalletOperation.Submitting,
+                bolt = tab == 0,
+                hint = if (operation is WalletOperation.Submitting) "Generating…" else null,
+            )
+            payload?.let { CodeField(it) }
+            // faint centred note describing the shown code
+            val note: String? = when {
+                operation is WalletOperation.Failure -> null // rendered separately in red
+                operation is WalletOperation.Submitting -> "Generating…"
+                typing -> "Pause typing to generate"
+                tab == 0 && payload != null && !hasAmount -> "Reusable code — the sender chooses the amount"
+                tab == 1 && payload != null && !hasAmount -> "Reusable address — pay any amount to your wallet"
+                else -> null
+            }
+            success?.expiresAtEpochSeconds?.takeIf { tab == 0 && payload != null }?.let { expiry ->
+                val nowMillis by produceState(System.currentTimeMillis(), expiry) {
+                    while (value.floorDiv(1_000) < expiry) {
+                        delay(1_000)
+                        value = System.currentTimeMillis()
+                    }
+                }
+                val expired = LightningInvoiceExpiryPresentation.remainingSeconds(expiry, nowMillis) == 0L
+                Text(
+                    LightningInvoiceExpiryPresentation.text(expiry, nowMillis),
+                    style = PyxType.rowSub, color = if (expired) PyxRed else PyxFaint,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp).semantics {
+                        stateDescription = if (expired) "Invoice expired" else "Invoice active"
+                        liveRegion = LiveRegionMode.Polite
+                    },
+                )
+            }
+            note?.let {
+                Text(it, style = PyxType.rowSub, color = PyxFaint,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = if (success?.expiresAtEpochSeconds != null) 4.dp else 16.dp))
+            }
+            if (operation is WalletOperation.Failure) Text(
+                operation.message, style = PyxType.rowSub, color = PyxRed,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp).semantics { liveRegion = LiveRegionMode.Assertive },
+            )
+        }
+    }
+    if (unitSheet) ReceiveUnitSheet(
+        current = unit,
+        fiatCode = state.snapshot.currencyCode,
+        onPick = { picked -> unit = picked; amount = ""; convertedSats = null; clear(); unitSheet = false },
+        dismiss = { unitSheet = false },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReceiveUnitSheet(
+    current: TransferAmountUnit,
+    fiatCode: String,
+    onPick: (TransferAmountUnit) -> Unit,
+    dismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = dismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = PyxSurface,
+        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+        scrimColor = Color(0xFF040609).copy(alpha = 0.55f),
+        dragHandle = {
+            Box(
+                Modifier.padding(top = 6.dp, bottom = 10.dp)
+                    .size(width = 40.dp, height = 4.dp)
+                    .background(cash.pyx.app.ui.theme.PyxBorderStrong, RoundedCornerShape(2.dp)),
+            )
+        },
+    ) {
+        Column(Modifier.padding(horizontal = 22.dp).padding(bottom = 30.dp)) {
+            Text("Amount unit", style = PyxType.centeredTitle, color = PyxText,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
+            listOf(
+                Triple(TransferAmountUnit.SATS, "SATS", "Satoshis"),
+                Triple(TransferAmountUnit.BTC, "BTC", "Bitcoin"),
+                Triple(TransferAmountUnit.FIAT, fiatCode, "Display currency"),
+            ).forEach { (option, code, name) ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { onPick(option) }.padding(vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(code, style = PyxType.keyValue, color = PyxText, modifier = Modifier.widthIn(min = 52.dp))
+                    Text(name, style = PyxType.rowSub, color = PyxMuted, modifier = Modifier.weight(1f))
+                    if (option == current) Icon(PyxIcons.Check, contentDescription = "Selected", tint = PyxOrange, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+}
+
+/** White prototype QR panel: bolt badge for Lightning, dashed placeholder or spinner otherwise. */
+@Composable
+private fun ReceiveQrZone(payload: String?, loading: Boolean, bolt: Boolean, hint: String?) {
+    if (loading || payload == null) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(1f)
+                .background(PyxSurface, RoundedCornerShape(18.dp))
+                .dashedBorder(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(13.dp)) {
+                if (loading) CircularProgressIndicator(color = PyxOrange, trackColor = PyxSurface2)
+                else Icon(PyxIcons.QrGlyph, contentDescription = null, tint = PyxFaint.copy(alpha = 0.55f), modifier = Modifier.size(48.dp))
+                hint?.let { Text(it, style = PyxType.rowSub, color = PyxFaint) }
+            }
+        }
+        return
+    }
+    val bitmap = remember(payload) { runCatching { QrPayload.encode(payload) }.getOrNull() } ?: return
+    Box(Modifier.fillMaxWidth()) {
+        Surface(color = Color.White, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+            Image(bitmap.asImageBitmap(), contentDescription = "QR code", modifier = Modifier.fillMaxWidth().aspectRatio(1f).padding(18.dp))
+        }
+        if (bolt) Box(
+            Modifier.align(Alignment.Center).size(50.dp)
+                .border(6.dp, Color.White, RoundedCornerShape(15.dp))
+                .padding(3.dp)
+                .background(PyxOrange, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(PyxIcons.Zap, contentDescription = null, tint = cash.pyx.app.ui.theme.PyxOnOrange, modifier = Modifier.size(22.dp))
+        }
+    }
+}
+
+private fun Modifier.dashedBorder() = this.then(
+    Modifier.drawBehind {
+        drawRoundRect(
+            color = cash.pyx.app.ui.theme.PyxBorderStrong,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 1.dp.toPx(),
+                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(12f, 10f)),
+            ),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx()),
+        )
+    },
+)
+
+/** Prototype code-field: truncated tap-to-copy code with inline copy and share actions. */
+@Composable
+private fun CodeField(payload: String) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var announcement by remember(payload) { mutableStateOf<String?>(null) }
+    val copyPayload = { announcement = QrPayload.copy(context, "Pyx receive code", payload, sensitive = false).announcement }
+    Surface(
+        color = PyxSurface, shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, PyxBorder),
+        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 5.dp, top = 5.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                payload, style = PyxType.inputMono.copy(fontSize = 14.sp), color = PyxText,
+                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).clickable(onClickLabel = "Copy") { copyPayload() },
+            )
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier.size(width = 1.dp, height = 28.dp).background(PyxBorder))
+            IconButton(onClick = copyPayload, modifier = Modifier.semantics { text = AnnotatedString("Copy") }) {
+                Icon(PyxIcons.Copy, contentDescription = null, tint = PyxMuted, modifier = Modifier.size(18.dp))
+            }
+            IconButton(
+                onClick = { context.startActivity(android.content.Intent.createChooser(QrPayload.shareIntent(payload, false), "Share")) },
+                modifier = Modifier.semantics { text = AnnotatedString("Share") },
+            ) {
+                Icon(PyxIcons.Share, contentDescription = null, tint = PyxMuted, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+    announcement?.let {
+        Text(it, style = PyxType.rowSub, color = PyxMuted,
+            modifier = Modifier.padding(top = 6.dp).semantics { liveRegion = LiveRegionMode.Polite })
+    }
+}
+
+/** Ecash arrives as an animated QR from the sender, so receiving leads with the scanner. */
+@Composable
+private fun EcashReceivePane(
+    client: Long,
+    operation: WalletOperation,
+    token: String,
+    onToken: (String) -> Unit,
+    submit: (String, Long, String, Long) -> Unit,
+    clear: () -> Unit,
+    scan: () -> Unit,
+    ecashFrame: String?,
+    startEcashDisplay: (String, Boolean) -> Unit,
+    stopEcashDisplay: () -> Unit,
+) {
+    Spacer(Modifier.height(24.dp))
+    // Like the prototype's claim stage, a result replaces the scanner entirely.
+    if (operation is WalletOperation.Success) {
+        PyxCard(padding = 16.dp) {
+            Column {
+                Text(operation.title, style = PyxType.rowTitle, color = PyxText)
+                if (operation.title == "Ecash token") EcashQrResult(operation.detail.substringBefore("\n"), ecashFrame, startEcashDisplay, stopEcashDisplay)
+                else SelectionContainer { Text(operation.detail, style = PyxType.body, color = PyxGreen) }
+            }
+        }
+        return
+    }
+    // scan-frame: dark viewfinder with accent corner brackets, tap to open the scanner
+    Box(
+        Modifier.fillMaxWidth().aspectRatio(1f)
+            .background(
+                Brush.radialGradient(listOf(Color(0xFF10161F), Color(0xFF070A0E))),
+                RoundedCornerShape(24.dp),
+            )
+            .border(1.dp, PyxBorder, RoundedCornerShape(24.dp))
+            .clickable(onClickLabel = "Scan ecash") { scan() }
+            .drawBehind {
+                val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = 3.dp.toPx(),
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                )
+                val inset = 14.dp.toPx()
+                val arm = 34.dp.toPx()
+                val w = size.width
+                val h = size.height
+                listOf(
+                    androidx.compose.ui.graphics.Path().apply { moveTo(inset, inset + arm); lineTo(inset, inset); lineTo(inset + arm, inset) },
+                    androidx.compose.ui.graphics.Path().apply { moveTo(w - inset - arm, inset); lineTo(w - inset, inset); lineTo(w - inset, inset + arm) },
+                    androidx.compose.ui.graphics.Path().apply { moveTo(inset, h - inset - arm); lineTo(inset, h - inset); lineTo(inset + arm, h - inset) },
+                    androidx.compose.ui.graphics.Path().apply { moveTo(w - inset - arm, h - inset); lineTo(w - inset, h - inset); lineTo(w - inset, h - inset - arm) },
+                ).forEach { path -> drawPath(path, color = PyxOrange, style = stroke) }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(PyxIcons.Scan, contentDescription = null, tint = PyxFaint, modifier = Modifier.size(44.dp))
+            Text("Point at the sender's Ecash QR", style = PyxType.rowSub, color = PyxMuted)
+        }
+    }
+    Spacer(Modifier.height(16.dp))
+    PyxField(
+        value = token, onValueChange = { onToken(it); clear() },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Or paste an ecash token") }, minLines = 2,
+        enabled = operation !is WalletOperation.Submitting,
+    )
+    PyxPrimaryButton(
+        if (operation is WalletOperation.Submitting) "Submitting…" else "Claim ecash",
+        { submit("claim_ecash", client, token, 0) },
+        Modifier.fillMaxWidth().padding(top = 12.dp),
+        enabled = token.isNotBlank() && operation !is WalletOperation.Submitting,
+    )
+    if (operation is WalletOperation.Failure) Text(operation.message, color = MaterialTheme.colorScheme.error,
+        modifier = Modifier.padding(top = 12.dp).semantics { liveRegion = LiveRegionMode.Assertive })
+}
+
 @Composable
 private fun TransferContent(
-    receive: Boolean,
     state: BootstrapState.Home,
     operation: WalletOperation,
     initialPayload: String?,
@@ -1587,7 +2031,6 @@ private fun TransferContent(
     var amount by remember { mutableStateOf("") }
     var amountUnit by remember { mutableStateOf(TransferAmountUnit.SATS) }
     var modalRoute by remember { mutableStateOf<WalletModalRoute?>(null) }
-    val anotherAddressGate = remember { ConfirmationActionGate() }
     val labels = listOf("Lightning", "On-chain", "Ecash")
     LaunchedEffect(initialPayload, initialType) {
         clear()
@@ -1607,11 +2050,11 @@ private fun TransferContent(
             .verticalScroll(rememberScrollState())
             .padding(vertical = 12.dp),
     ) {
-        PyxTopBar(if (receive) "Receive" else "Send", onBack = back)
+        PyxTopBar("Send", onBack = back)
         PyxSegmented(labels, tab, { index -> tab = index; text = ""; amount = ""; clear() })
         Spacer(Modifier.height(16.dp))
-        val needsAmount = if (receive) tab == 0 else tab != 0
-        val needsText = if (receive) tab == 2 else tab != 2
+        val needsAmount = tab != 0
+        val needsText = tab != 2
         if (needsText) PyxField(
             value = text, onValueChange = { text = it; clear() }, modifier = Modifier.fillMaxWidth(),
             label = { Text(if (tab == 0) "Lightning invoice" else if (tab == 1) "Bitcoin address" else "Ecash token") },
@@ -1659,9 +2102,7 @@ private fun TransferContent(
             else -> (amount.toLongOrNull() ?: 0L) > 0
         }
         PyxPrimaryButton(
-            text = if (operation is WalletOperation.Submitting) "Submitting…" else if (needsAmount && amountUnit == TransferAmountUnit.FIAT && operation !is WalletOperation.FiatConverted) "Convert amount" else if (!receive) "Review and send" else when (tab) {
-                1 -> "Get address"; 2 -> "Claim ecash"; else -> "Create invoice"
-            },
+            text = if (operation is WalletOperation.Submitting) "Submitting…" else if (needsAmount && amountUnit == TransferAmountUnit.FIAT && operation !is WalletOperation.FiatConverted) "Convert amount" else "Review and send",
             onClick = onClickLabel@{
                 if (needsAmount && amountUnit == TransferAmountUnit.FIAT && operation !is WalletOperation.FiatConverted) {
                     submit("fiat_to_sats", client, amount, 0)
@@ -1670,13 +2111,7 @@ private fun TransferContent(
                 val enteredSat = (operation as? WalletOperation.FiatConverted)?.amountSat
                     ?: (if (amountUnit == TransferAmountUnit.BTC) BitcoinAmountPresentation.toSats(amount) else amount.toLongOrNull())
                     ?: 0L
-                if (receive) {
-                    val action = when (tab) { 0 -> "receive_lightning"; 1 -> "receive_onchain"; else -> "claim_ecash" }
-                    val existingAddress = tab == 1 && operation is WalletOperation.Success && operation.title == "On-chain address"
-                    if (existingAddress) {
-                        if (anotherAddressGate.request { submit(action, client, text, enteredSat) }) modalRoute = WalletModalRoute.ANOTHER_ADDRESS
-                    } else submit(action, client, text, enteredSat)
-                } else when (tab) {
+                when (tab) {
                     0 -> submit(if (initialType == cash.pyx.app.nativeapi.InputType.LNURL) "prepare_lnurl" else "prepare_lightning", client, text, 0)
                     1 -> submit("prepare_onchain", client, (operation as? WalletOperation.BitcoinParsed)?.destination ?: text, enteredSat)
                     else -> modalRoute = WalletModalRoute.SEND_CONFIRMATION
@@ -1684,11 +2119,6 @@ private fun TransferContent(
             },
             enabled = !submitting && textValid && amountValid,
             modifier = Modifier.fillMaxWidth(),
-        )
-        if (receive && tab == 0) PyxGhostButton(
-            "Receive without amount (LNURL)",
-            { submit("receive_lnurl", client, "", 0) }, enabled = !submitting,
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
         )
         when (operation) {
             is WalletOperation.Success -> PyxCard(Modifier.padding(top = 16.dp), padding = 16.dp) {
@@ -1785,13 +2215,6 @@ private fun TransferContent(
             }
         }) { Text("Confirm") } },
         dismissButton = { TextButton(onClick = { modalRoute = null }) { Text("Cancel") } },
-    )
-    if (modalRoute == WalletModalRoute.ANOTHER_ADDRESS) AlertDialog(
-        onDismissRequest = { anotherAddressGate.cancel(); modalRoute = null },
-        title = { Text("Generate another address?") },
-        text = { Text("The current address remains valid. Generate a new on-chain receive address?") },
-        confirmButton = { Button(onClick = { modalRoute = null; anotherAddressGate.confirm() }) { Text("Generate address") } },
-        dismissButton = { TextButton(onClick = { anotherAddressGate.cancel(); modalRoute = null }) { Text("Cancel") } },
     )
 }
 

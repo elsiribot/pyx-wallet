@@ -16,4 +16,14 @@ class BitcoinAmountPresentationTest {
         listOf("0", "-1", "0.000000001", "1.2.3", "", "999999999999999999999999")
             .forEach { assertNull(it, BitcoinAmountPresentation.toSats(it)) }
     }
+
+    @Test fun formatsBip21AmountsAsPlainTrimmedBtcDecimals() {
+        assertEquals("0.00000001", BitcoinAmountPresentation.toBtcDecimal(1))
+        assertEquals("1", BitcoinAmountPresentation.toBtcDecimal(100_000_000))
+        assertEquals("0.005", BitcoinAmountPresentation.toBtcDecimal(500_000))
+        assertEquals(
+            "bitcoin:bc1qexample?amount=0.00012345",
+            cash.pyx.app.ui.Bip21Presentation.uri("bc1qexample", 12_345),
+        )
+    }
 }

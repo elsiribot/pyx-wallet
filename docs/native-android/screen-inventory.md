@@ -12,7 +12,7 @@ Prototype names refer to `docs/design/prototype.html`; where no exact prototype 
 | `base_screen` | root shell / initialized startup | factory list/load/join/recover/get currency/seed; selected federation loading, no federations, load failure, pending recovery. Owns scan and wallet switcher. |
 | `home_screen_body` | prototype `home` | consumes balance, currency, connection and recent-payment state supplied by federation shell; masked balance, empty activity, offline/degraded. |
 | `federation_screen` | selected wallet shell / prototype `home` | client balance/connection/event streams, history, exchange prefetch, expiry and recovery flags; loading, offline, recovery, expired/successor, stream error. |
-| `receive_screen` | root Receive action / prototype receive modes | `fiat_to_sats`, `ln_receive`, `lnurl`, `onchain_receive_address`, `wallet_v2_receive`; mode chooser, amount entry, generating/error/unsupported. |
+| `receive_screen` | root Receive action / prototype receive modes (2026-09-05: prototype live behavior — reusable LNURL shown when amountless, invoice auto-generated 1s after typing stops, reusable address with local BIP21, ecash tab leads with the scanner) | `fiat_to_sats`, `ln_receive`, `lnurl`, `onchain_receive_address`, `wallet_v2_receive`; mode chooser, amount entry, generating/error/unsupported. |
 | `invoice_amount_screen` | Lightning amount route | `ln_receive` or `lnurl`; invalid amount, generating/error, then invoice/LNURL display. |
 | `display_invoice_screen` | generated Lightning request | QR/copy/share; invoice is sensitive and ephemeral. |
 | `display_lnurl_screen` | generated personal LNURL | QR/copy/share; request is sensitive and ephemeral. |

@@ -16,4 +16,14 @@ object BitcoinAmountPresentation {
     }
 
     fun inputCharacterAllowed(character: Char): Boolean = character.isDigit() || character == '.'
+
+    /** BIP21 amount: plain decimal BTC, no exponent, trailing zeros trimmed. */
+    fun toBtcDecimal(sats: Long): String =
+        BigDecimal(sats).divide(satsPerBitcoin).stripTrailingZeros().toPlainString()
+}
+
+/** BIP21 payment URI for a reusable address once an amount is entered. */
+object Bip21Presentation {
+    fun uri(address: String, amountSat: Long): String =
+        "bitcoin:$address?amount=${BitcoinAmountPresentation.toBtcDecimal(amountSat)}"
 }
