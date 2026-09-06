@@ -14,7 +14,7 @@ impl LnurlWrapper {
 }
 
 /// Strict URI encode adhering to RFC 3986
-fn strict_uri_encode(input: &str) -> String {
+pub(crate) fn strict_uri_encode(input: &str) -> String {
     input
         .bytes()
         .map(|byte| match byte {
