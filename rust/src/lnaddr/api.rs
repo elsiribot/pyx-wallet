@@ -174,10 +174,39 @@ impl<T: HttpTransport> LnaddrApi<T> {
         nip98_header(&self.keypair, url, method, body, Self::created_at_secs())
     }
 
+    /// `Authorization` (NIP-98-signed) + `Content-Type: application/json`
+    /// headers for a JSON-body request. Every authenticated endpoint here
+    /// except the bodyless `list_owned` GET sends exactly this pair.
+    fn json_auth_headers(&self, url: &str, method: &str, body: &[u8]) -> Vec<(String, String)> {
+        vec![
+            (
+                "Authorization".to_string(),
+                self.nip98_auth_header(url, method, Some(body)),
+            ),
+            ("Content-Type".to_string(), "application/json".to_string()),
+        ]
+    }
+
     /// `/api/v1` error bodies are JSON `{"error": "<code>"}`; anything that
     /// doesn't parse that way falls back to a status-code message.
     fn api_error_message(status: u16, body: &[u8]) -> String {
         match serde_json::from_slice::<ApiErrorBody>(body) {
+            Ok(ApiErrorBody { error }) => format!("lnaddrd error: {error}"),
+            Err(_) => format!("lnaddrd request failed with status {status}"),
+        }
+    }
+
+    /// `POST /api/v1/register` error mapping. Per protocol doc 03,
+    /// `payment_required` is specific to this endpoint (the name stopped
+    /// being free between quote and claim, e.g. the price changed), so it
+    /// gets a distinct, actionable message rather than the generic
+    /// `lnaddrd error: <code>` fallback — the UI needs to tell this apart
+    /// from an opaque failure.
+    fn register_error_message(status: u16, body: &[u8]) -> String {
+        match serde_json::from_slice::<ApiErrorBody>(body) {
+            Ok(ApiErrorBody { error }) if error == "payment_required" => {
+                "payment_required — this name is not free; re-check the quote".to_string()
+            }
             Ok(ApiErrorBody { error }) => format!("lnaddrd error: {error}"),
             Err(_) => format!("lnaddrd request failed with status {status}"),
         }
@@ -211,6 +240,14 @@ impl<T: HttpTransport> LnaddrApi<T> {
         }
 
         if let Ok(ApiErrorBody { error }) = serde_json::from_slice::<ApiErrorBody>(&body) {
+            // Per protocol doc 03, quote's error set is invalid_input /
+            // unsupported_domain / taken / reserved / length_disabled /
+            // rate_limited — a priced-but-claimable name is a 200 with
+            // `price_msat` set, not an error. `payment_required` is not in
+            // this list (it's `register`-only, thrown when the name stops
+            // being free between quote and claim), so it falls through to
+            // the `Invalid` catch-all here deliberately, same as any other
+            // unrecognized code.
             return Ok(match error.as_str() {
                 "taken" => QuoteResult::Taken,
                 "reserved" => QuoteResult::Reserved,
@@ -240,13 +277,7 @@ impl<T: HttpTransport> LnaddrApi<T> {
         let body = json!({ "domain": domain, "username": username, "destination": destination })
             .to_string()
             .into_bytes();
-        let headers = vec![
-            (
-                "Authorization".to_string(),
-                self.nip98_auth_header(&url, "POST", Some(&body)),
-            ),
-            ("Content-Type".to_string(), "application/json".to_string()),
-        ];
+        let headers = self.json_auth_headers(&url, "POST", &body);
 
         let (status, response_body) = self
             .transport
@@ -257,7 +288,7 @@ impl<T: HttpTransport> LnaddrApi<T> {
             return Err(UNAUTHORIZED_MSG.to_string());
         }
         if !(200..300).contains(&status) {
-            return Err(Self::api_error_message(status, &response_body));
+            return Err(Self::register_error_message(status, &response_body));
         }
 
         let RegisterResponse {
@@ -312,13 +343,7 @@ impl<T: HttpTransport> LnaddrApi<T> {
         let body = json!({ "domain": domain, "username": username, "destination": destination })
             .to_string()
             .into_bytes();
-        let headers = vec![
-            (
-                "Authorization".to_string(),
-                self.nip98_auth_header(&url, "PUT", Some(&body)),
-            ),
-            ("Content-Type".to_string(), "application/json".to_string()),
-        ];
+        let headers = self.json_auth_headers(&url, "PUT", &body);
 
         let (status, _body) = self
             .transport
@@ -339,13 +364,7 @@ impl<T: HttpTransport> LnaddrApi<T> {
         let body = json!({ "domain": domain, "username": username })
             .to_string()
             .into_bytes();
-        let headers = vec![
-            (
-                "Authorization".to_string(),
-                self.nip98_auth_header(&url, "DELETE", Some(&body)),
-            ),
-            ("Content-Type".to_string(), "application/json".to_string()),
-        ];
+        let headers = self.json_auth_headers(&url, "DELETE", &body);
 
         let (status, _body) = self
             .transport
@@ -568,6 +587,36 @@ mod tests {
         assert_eq!(sent["domain"], "example.com");
         assert_eq!(sent["username"], "alice");
         assert_eq!(sent["destination"], "LNURL1DUMMY");
+    }
+
+    /// `register` (unlike `quote`) can answer `payment_required` when the
+    /// name stopped being free between quote and claim (e.g. the price
+    /// changed) — per protocol doc 03 this is specific to this endpoint, and
+    /// must be surfaced distinctly so the UI can tell "re-check the quote"
+    /// apart from an opaque failure.
+    #[tokio::test]
+    async fn register_maps_payment_required() {
+        let transport = FakeTransport::new(402, r#"{"error":"payment_required"}"#);
+        let api = LnaddrApi::new(transport, test_keypair());
+
+        let err = api
+            .register_free(
+                "https://pay.example.com",
+                "example.com",
+                "alice",
+                "LNURL1DUMMY",
+            )
+            .await
+            .expect_err("payment_required must be an error");
+
+        assert!(
+            err.contains("payment_required"),
+            "expected the error to mention payment_required, got {err:?}"
+        );
+        assert!(
+            err.to_lowercase().contains("quote"),
+            "expected the error to point back at re-checking the quote, got {err:?}"
+        );
     }
 
     #[tokio::test]
