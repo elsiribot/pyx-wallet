@@ -5,7 +5,7 @@ use crate::db::{
     ClientConfigKey, ClientConfigPrefix, ContactKey, ContactPrefix, DbKeyPrefix,
     EventLogEntryPrefix, RootEntropyKey, SelectedCurrencyKey,
 };
-use crate::lnaddr::nostr_keypair;
+use crate::lnaddr::{LnAddressServiceImpl, nostr_keypair};
 use crate::lnurl::LnurlWrapper;
 use crate::{DatabaseWrapper, InviteCodeWrapper, MnemonicWrapper};
 use bitcoin::secp256k1::Keypair;
@@ -39,6 +39,7 @@ use tokio::sync::Mutex;
 pub struct ConduitClientFactory {
     db: Database,
     mnemonic: fedimint_bip39::Mnemonic,
+    lnaddr: Arc<LnAddressServiceImpl>,
 }
 
 #[cfg_attr(feature = "flutter-bridge", frb)]
@@ -134,9 +135,12 @@ impl ConduitClientFactory {
 
         dbtx.commit_tx_result().await.map_err(|e| e.to_string())?;
 
+        let lnaddr = Arc::new(LnAddressServiceImpl::new(db.0.clone(), &mnemonic.0));
+
         Ok(Self {
             db: db.0.clone(),
             mnemonic: mnemonic.0.clone(),
+            lnaddr,
         })
     }
 
@@ -147,9 +151,13 @@ impl ConduitClientFactory {
             .get_value(&RootEntropyKey)
             .await
             .map(|entropy| fedimint_bip39::Mnemonic::from_entropy(&entropy).unwrap())
-            .map(|mnemonic| Self {
-                db: db.0.clone(),
-                mnemonic,
+            .map(|mnemonic| {
+                let lnaddr = Arc::new(LnAddressServiceImpl::new(db.0.clone(), &mnemonic));
+                Self {
+                    db: db.0.clone(),
+                    mnemonic,
+                    lnaddr,
+                }
             })
     }
 
@@ -239,7 +247,9 @@ impl ConduitClientFactory {
 
         self.save_config(&client.config().await).await;
 
-        Ok(self.create_client(Arc::new(client), federation_id).await)
+        let client = self.create_client(Arc::new(client), federation_id).await;
+        self.spawn_lnaddr_sync(client.clone(), federation_id);
+        Ok(client)
     }
 
     #[cfg_attr(feature = "flutter-bridge", frb)]
@@ -272,7 +282,9 @@ impl ConduitClientFactory {
 
         self.save_config(&client.config().await).await;
 
-        Ok(self.create_client(Arc::new(client), federation_id).await)
+        let client = self.create_client(Arc::new(client), federation_id).await;
+        self.spawn_lnaddr_sync(client.clone(), federation_id);
+        Ok(client)
     }
 
     #[cfg_attr(feature = "flutter-bridge", frb)]
@@ -294,7 +306,9 @@ impl ConduitClientFactory {
 
         self.save_config(&client.config().await).await;
 
-        Some(self.create_client(Arc::new(client), *federation_id).await)
+        let client = self.create_client(Arc::new(client), *federation_id).await;
+        self.spawn_lnaddr_sync(client.clone(), *federation_id);
+        Some(client)
     }
 
     async fn save_config(&self, config: &ClientConfig) {
@@ -304,6 +318,22 @@ impl ConduitClientFactory {
             .await;
 
         dbtx.commit_tx().await;
+    }
+
+    /// After a successful client load/join, refreshes this federation's
+    /// lnaddr destination(s) in the background. Never runs inline: unlike
+    /// most of the load path, `ConduitClient::lnurl` can itself make a
+    /// network call (registering a recurring-payment code), so this is
+    /// detached with `tokio::spawn`; any failure here (lnurl unavailable,
+    /// sync failing server-side) is swallowed rather than surfaced, since a
+    /// stale destination just gets retried on the next load.
+    fn spawn_lnaddr_sync(&self, client: ConduitClient, federation_id: FederationId) {
+        let lnaddr = self.lnaddr.clone();
+        tokio::spawn(async move {
+            if let Ok(lnurl) = client.lnurl().await {
+                lnaddr.sync_destinations(federation_id, &lnurl).await;
+            }
+        });
     }
 
     async fn create_client(
