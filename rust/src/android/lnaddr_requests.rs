@@ -10,6 +10,11 @@
 //! `bootstrap::current()` instead of an explicit factory handle — this app
 //! only ever has one factory alive at a time (see `bootstrap::run_async`),
 //! so that lookup is equivalent to threading a factory handle through.
+//!
+//! Note for whoever writes the Kotlin-side parser: this crate's `serde_json`
+//! has no `preserve_order`/`indexmap` dependency, so `json!`'s object keys
+//! serialize in **alphabetical** order, not the field order written here —
+//! parse by key name, not position.
 
 use std::sync::Arc;
 
@@ -78,15 +83,19 @@ pub(crate) async fn claim_async(
     validate_origin(&origin)?;
     validate_domain(&domain)?;
     validate_username(&username)?;
+    // Resolve the client, its federation id, and the service before the
+    // first await: a concurrent shutdown+restore rebinds `current_factory()`
+    // to a new session's factory (see `current_factory`'s doc), so both
+    // handles must be captured in the same synchronous span, before
+    // `client.lnurl()` gives another task a chance to run.
     let client = global_get::<ConduitClient>(client_handle, HandleKind::Client)?;
+    let federation_id = client.federation_id();
+    let lnaddr = current_factory()?.lnaddr();
     let destination = client
         .lnurl()
         .await
         .map_err(|e| AndroidError::from_lightning(&e))?;
-    let federation_id = client.federation_id();
-    let factory = current_factory()?;
-    let record = factory
-        .lnaddr()
+    let record = lnaddr
         .claim(&origin, &domain, &username, federation_id, destination)
         .await
         .map_err(|e| AndroidError::internal_logged("lnaddr_claim", &e))?;
@@ -132,15 +141,17 @@ pub(crate) async fn repoint_async(
 ) -> Result<String, AndroidError> {
     validate_domain(&domain)?;
     validate_username(&username)?;
+    // See claim_async: resolve client + federation id + service before the
+    // first await so a concurrent shutdown+restore can't rebind this call
+    // onto a different session's factory mid-flight.
     let client = global_get::<ConduitClient>(client_handle, HandleKind::Client)?;
+    let federation_id = client.federation_id();
+    let lnaddr = current_factory()?.lnaddr();
     let destination = client
         .lnurl()
         .await
         .map_err(|e| AndroidError::from_lightning(&e))?;
-    let federation_id = client.federation_id();
-    let factory = current_factory()?;
-    factory
-        .lnaddr()
+    lnaddr
         .repoint(&domain, &username, federation_id, destination)
         .await
         .map_err(|e| AndroidError::internal_logged("lnaddr_repoint", &e))?;
@@ -182,13 +193,18 @@ fn factory(handle: u64) -> Result<Arc<ConduitClientFactory>, AndroidError> {
 
 /// Resolves the wallet's one live factory without an explicit handle
 /// parameter (`lnaddrClaimAsync`/`lnaddrRepointAsync` only carry a client
-/// handle on the wire). See the module doc for why this is safe here.
+/// handle on the wire). See the module doc for why this is safe here, and
+/// call this — like `global_get` — before the caller's first `await` so the
+/// resolved `Arc` can't drift out from under a concurrent shutdown+restore.
 fn current_factory() -> Result<Arc<ConduitClientFactory>, AndroidError> {
     match bootstrap::current()? {
         Some(bootstrap::BootstrapResult::Ready { factory_handle, .. }) => {
             global_get(factory_handle, HandleKind::Factory)
         }
-        _ => Err(AndroidError::internal()),
+        other => Err(AndroidError::internal_logged(
+            "lnaddr_current_factory",
+            other,
+        )),
     }
 }
 
