@@ -241,20 +241,36 @@ class LnAddressStateOwnerTest {
         assertNull(owner.state.value.message)
     }
 
-    @Test fun `recover refreshes afterward even when recovery itself fails`() = runTest {
+    @Test fun `recover success refreshes so the recovered addresses become visible`() = runTest {
         val api = FakeLnaddrApi()
-        api.recoverResult = NativeResult.Failure(AndroidError("recover_failed", "recovery failed", true))
+        api.recoverResult = NativeResult.Success(LnaddrRecovery(1))
+        val owner = LnAddressStateOwner(api, backgroundScope)
+
+        owner.recover(1)
+        runCurrent()
+        api.succeedSnapshot(address("alice"))
+        api.succeedDiscovery(server("primal.net"))
+        runCurrent()
+
+        assertEquals(1, api.recoverCalls)
+        assertEquals(listOf("alice"), owner.state.value.addresses.map(LnAddress::username))
+    }
+
+    @Test fun `recover failure keeps its message visible and does not refresh`() = runTest {
+        val api = FakeLnaddrApi()
+        api.recoverResult = NativeResult.Failure(AndroidError("unauthorized", "unauthorized: expired signature", false))
         val owner = LnAddressStateOwner(api, backgroundScope)
 
         owner.recover(1)
         runCurrent()
 
-        // The unconditional refresh recover() triggers clears the message as soon as it starts
-        // (same stale-message rule refresh() applies everywhere else), so recovery's own
-        // failure message is necessarily transient rather than the value that survives.
+        // Nothing changed remotely when recovery fails, so there is nothing to refresh — the
+        // failure message (clock-hinted here, since an expired-looking signature is often a
+        // device clock drift) must stay visible rather than being wiped by a refresh it never
+        // triggers.
         assertEquals(1, api.recoverCalls)
-        assertEquals(1, api.snapshotCallCount)
-        assertNull(owner.state.value.message)
+        assertEquals(0, api.snapshotCallCount)
+        assertTrue(owner.state.value.message!!.lowercase().contains("clock"))
     }
 
     private fun address(

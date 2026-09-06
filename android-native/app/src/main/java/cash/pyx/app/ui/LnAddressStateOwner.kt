@@ -81,19 +81,19 @@ class LnAddressStateOwner(
         }
     }
 
-    /** Recovers claimed addresses from the server, then refreshes regardless of outcome —
-     * a partial recovery is still worth reflecting in the address list. A recovery failure's
-     * message is necessarily transient: the unconditional refresh that follows clears it as
-     * soon as it starts, the same as any other stale message. */
+    /** Recovers claimed addresses from the server. A success refreshes so the recovered
+     * addresses become visible; a failure means nothing changed remotely, so there is nothing
+     * to refresh — it only sets the message (clock-hinted where applicable, e.g. an
+     * unauthorized 401 from a device clock that has drifted), and that message must stay
+     * visible rather than being wiped by a refresh the failure didn't earn. */
     fun recover(factoryHandle: Long) {
         scope.launch {
             when (val result = api.lnaddrRecoverAsync(factoryHandle)) {
-                is NativeResult.Success -> {}
+                is NativeResult.Success -> refresh(factoryHandle)
                 is NativeResult.Failure -> mutableState.update {
                     it.copy(message = LnaddrClaimPresentation.clockHint(result.error.userMessage))
                 }
             }
-            refresh(factoryHandle)
         }
     }
 
