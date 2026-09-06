@@ -26,6 +26,7 @@ class WalletRouteTest {
                 WalletModalRoute.SUCCESSOR_REVIEW,
                 WalletModalRoute.JOIN_CONFIRMATION,
                 WalletModalRoute.SEED_COPY_WARNING,
+                WalletModalRoute.LNADDR_RELEASE,
             ),
             WalletModalRoute.entries.toSet(),
         )

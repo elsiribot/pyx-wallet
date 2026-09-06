@@ -15,7 +15,8 @@ enum class WalletRoute(override val route: String, val title: String) : PyxRoute
     DETAILS("details", "Wallet Provider"), GUARDIANS("guardians", "Guardians"),
     SETTINGS("settings", "Settings"), CURRENCY("currency", "Currency"), CONTACTS("contacts", "Contacts"),
     ADDRESSES("addresses", "Addresses"), ACCESS("access", "Access Control"),
-    SEED_BACKUP("seed_backup", "Recovery words"), JOIN("join", "Join"), RECOVER("recover", "Recover");
+    SEED_BACKUP("seed_backup", "Recovery words"), JOIN("join", "Join"), RECOVER("recover", "Recover"),
+    LNADDR("lnaddr", "Lightning addresses");
 
     companion object {
         fun forInput(type: InputType): WalletRoute = when (type) {
@@ -39,6 +40,7 @@ enum class WalletModalRoute(override val route: String) : PyxRoute {
     SUCCESSOR_REVIEW("modal_successor_review"),
     JOIN_CONFIRMATION("modal_join_confirmation"),
     SEED_COPY_WARNING("modal_seed_copy_warning"),
+    LNADDR_RELEASE("modal_lnaddr_release"),
 }
 
 /** Payload stays in ephemeral memory; only the payload-free [WalletRoute] enters saved navigation state. */

@@ -206,6 +206,9 @@ fun PyxApp(
     onLoadActivityPage: (Long, Boolean) -> Unit = { _, _ -> },
     onOpenActivityDetail: (Long, String) -> Unit = { _, _ -> },
     onDismissActivityDetail: () -> Unit = {},
+    // Consumed directly rather than flattened, matching LnaddrClaimSheet's seam; null only in
+    // previews/tests that never navigate into the Lightning addresses screen.
+    lnAddressStateOwner: LnAddressStateOwner? = null,
 ) {
     val navController = rememberNavController()
     var routedInput by remember { mutableStateOf<IncomingRequest?>(null) }
@@ -321,18 +324,19 @@ fun PyxApp(
                     }
                     listOf(WalletRoute.WALLETS, WalletRoute.DETAILS, WalletRoute.GUARDIANS,
                         WalletRoute.SETTINGS, WalletRoute.CURRENCY, WalletRoute.CONTACTS,
-                        WalletRoute.ADDRESSES, WalletRoute.ACCESS, WalletRoute.SEED_BACKUP).forEach { route ->
+                        WalletRoute.ADDRESSES, WalletRoute.ACCESS, WalletRoute.SEED_BACKUP,
+                        WalletRoute.LNADDR).forEach { route ->
                         composable(route.route) {
                             ManageContent(route, state, operation, navController::goBack,
                                 { navController.open(WalletRoute.JOIN) }, { navController.open(WalletRoute.WALLETS) },
                                 { navController.open(WalletRoute.CONTACTS) }, { navController.open(WalletRoute.ADDRESSES) },
                                 { navController.open(WalletRoute.ACCESS) }, { navController.open(WalletRoute.SEED_BACKUP) },
                                 { navController.open(WalletRoute.CURRENCY) }, { navController.open(WalletRoute.GUARDIANS) },
-                                { navController.open(WalletRoute.DETAILS) },
+                                { navController.open(WalletRoute.DETAILS) }, { navController.open(WalletRoute.LNADDR) },
                                 onOperation, onClearOperation, biometricAvailable, biometricEnabled, onBiometricToggle, onBackup,
                                 contactsState, onClearContactsMessage, connection, federationState, recovery, recoveryExpiry,
                                 currencySettingsState, onClearCurrencyMessage, addresses, onClassify, pendingIrreversibleOperation,
-                                onRefreshOperationReconciliation)
+                                onRefreshOperationReconciliation, lnAddressStateOwner)
                         }
                     }
                     listOf(WalletRoute.JOIN, WalletRoute.RECOVER).forEach { route ->
@@ -882,6 +886,7 @@ private fun ManageContent(
     openCurrency: () -> Unit,
     openGuardians: () -> Unit,
     openDetails: () -> Unit,
+    openLnaddr: () -> Unit,
     submit: (String, Long, String, Long) -> Unit,
     clear: () -> Unit,
     biometricAvailable: Boolean,
@@ -900,11 +905,25 @@ private fun ManageContent(
     sendContact: (String) -> Unit,
     pendingIrreversibleOperation: cash.pyx.app.security.PendingIrreversibleOperation?,
     refreshOperationReconciliation: () -> Unit,
+    lnAddressStateOwner: LnAddressStateOwner? = null,
 ) {
+    val selected = state.snapshot.selected
+    // The lightning-address screen owns its own top bar/layout (its own "+" action, no
+    // WalletOperation concept), so it renders standalone rather than through the generic
+    // PyxTopBar + when(screen) body shared by the other management destinations below.
+    if (screen == WalletRoute.LNADDR) {
+        lnAddressStateOwner?.let {
+            cash.pyx.app.ui.components.LnaddrListContent(
+                it, state.snapshot.federations, selected?.clientHandle, state.factoryHandle,
+                back = { clear(); back() },
+            )
+        }
+        return
+    }
+    val lnAddressState = lnAddressStateOwner?.state?.collectAsStateWithLifecycle()?.value
     var input by remember { mutableStateOf("") }
     var confirmationRoute by remember { mutableStateOf<WalletModalRoute?>(null) }
     val addressMutationGate = remember { ConfirmationActionGate() }
-    val selected = state.snapshot.selected
     val operationModalRoute = if (operation is WalletOperation.SuccessorInvite) WalletModalRoute.SUCCESSOR_REVIEW else null
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
         PyxTopBar(
@@ -1150,6 +1169,12 @@ private fun ManageContent(
                             valueStyle = PyxType.settingsValue, valueColor = PyxFaint, chevron = true, onClick = openSeedBackup)
                         PyxDivider()
                         CardRow("Manage contacts", chevron = true, onClick = openContacts)
+                        PyxDivider()
+                        val lnAddressPrimary = selected?.federationId?.let { federationId ->
+                            lnAddressState?.addresses?.firstOrNull { it.federationId == federationId && it.isPrimary }
+                        }
+                        CardRow("Lightning address", value = lnAddressPrimary?.display ?: "Claim",
+                            valueStyle = PyxType.settingsValue, valueColor = PyxFaint, chevron = true, onClick = openLnaddr)
                     }
                 }
                 SectionLabel("Security")
@@ -3004,6 +3029,7 @@ fun PyxApp(
         onLoadActivityPage = viewModel::loadActivityPage,
         onOpenActivityDetail = viewModel::paymentDetails,
         onDismissActivityDetail = viewModel::dismissPaymentDetails,
+        lnAddressStateOwner = viewModel.lnAddressStateOwner,
         biometricAvailable = biometricAvailable,
         biometricEnabled = biometricEnabled,
         onBiometricToggle = { enabled ->

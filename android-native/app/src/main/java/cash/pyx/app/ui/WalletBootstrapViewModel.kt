@@ -164,6 +164,7 @@ class WalletBootstrapViewModel internal constructor(
     private val federationStateOwner = FederationStateOwner(federationRepository, featureScope)
     private val lnurlStateOwner = LnurlStateOwner(lnurlRepository, featureScope)
     private val onchainAddressStateOwner = OnchainAddressStateOwner(onchainAddressRepository, featureScope)
+    val lnAddressStateOwner = LnAddressStateOwner(repository.nativeApi, featureScope)
     private var refreshJob: Job? = null
     private var regularOperationJob: Job? = null
     private var irreversibleJob: Job? = null

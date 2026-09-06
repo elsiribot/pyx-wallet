@@ -70,7 +70,10 @@ interface HomeStreamRepository {
 }
 
 class WalletBootstrapRepository(
-    private val nativeApi: NativeWalletApi,
+    // Not private: LnAddressStateOwner (a narrow, JNI-facing owner rather than a
+    // testable Repository seam like the others below) is constructed straight
+    // from the native API, so WalletBootstrapViewModel needs a handle to it.
+    val nativeApi: NativeWalletApi,
     private val filesDir: String,
     private val subscriptions: WalletSubscriptionBindings = JniWalletSubscriptionBindings,
     private val subscriptionCleanupScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
