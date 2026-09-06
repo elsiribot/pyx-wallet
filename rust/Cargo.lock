@@ -851,6 +851,7 @@ name = "conduit"
 version = "0.6.0"
 dependencies = [
  "async-stream",
+ "base64",
  "bitcoin",
  "fedimint-api-client",
  "fedimint-bip39",

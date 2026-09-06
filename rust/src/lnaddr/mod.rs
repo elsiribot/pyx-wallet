@@ -5,9 +5,12 @@
 //! lnaddrd server) and UI are added by later tasks.
 
 mod identity;
+mod nip98;
 mod store;
 
-#[allow(unused_imports)] // Consumed once Task 3+ wire in NIP-98 auth events.
+#[allow(unused_imports)] // Consumed once Task 4+ wire in NIP-98 auth events.
 pub(crate) use identity::{nostr_keypair, nostr_pubkey_hex};
+#[allow(unused_imports)] // Consumed once Task 4 wires in the lnaddrd HTTP client.
+pub(crate) use nip98::nip98_header;
 #[allow(unused_imports)] // Consumed once Task 4-6 wire in the service layer.
 pub(crate) use store::{LnAddressRecord, LnAddressStore};
