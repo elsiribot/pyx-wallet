@@ -680,6 +680,75 @@ mod tests {
         assert!(parse_announcement(&event).is_none());
     }
 
+    /// `tampered_content_fails_signature_check` and
+    /// `wrong_signer_fails_signature_check` (above) both mutate a field the
+    /// id preimage covers, so `parse_announcement` rejects them at the
+    /// recomputed-id-equality check — `verify_schnorr` is never reached.
+    /// This test instead builds an event that is fully self-consistent (the
+    /// recomputed NIP-01 id matches the wire `id`, and `pubkey`/`content`/
+    /// `tags`/`created_at` all agree with each other) but signs that
+    /// correct id with a *different* keypair than the one named in
+    /// `pubkey`, producing a structurally valid 64-byte schnorr signature
+    /// that simply does not verify against the claimed signer. This is the
+    /// only way to exercise the `verify_schnorr` rejection branch itself
+    /// rather than short-circuiting on the id check first.
+    #[test]
+    fn self_consistent_event_with_invalid_signature_is_rejected() {
+        let claimed_signer = test_keypair();
+        let actual_signer = nostr_keypair(
+            &Mnemonic::from_str(
+                "legal winner thank year wave sausage worth useful legal winner thank yellow",
+            )
+            .expect("valid BIP-39 test mnemonic"),
+        );
+
+        let content = valid_content();
+        let content_str = serde_json::to_string(&content).expect("content always serializes");
+        let created_at = 1_750_000_000u64;
+        let tags = vec![
+            json!(["d", format!("{D_TAG_PREFIX}https://pay.example.com")]),
+            json!(["t", SERVICE_TAG]),
+        ];
+
+        let (claimed_x_only, _parity) = claimed_signer.x_only_public_key();
+        let pubkey_hex = fedimint_core::hex::encode(claimed_x_only.serialize());
+
+        // Id is computed from claimed_signer's pubkey plus the real
+        // content/tags/created_at, so it is exactly the id a genuine event
+        // from `claimed_signer` would carry.
+        let id = nostr_event_id(
+            &pubkey_hex,
+            &created_at,
+            KIND_SERVICE_ANNOUNCEMENT,
+            &tags,
+            &content_str,
+        );
+        let id_hex = fedimint_core::hex::encode(id);
+
+        // Sign that correct id with a DIFFERENT keypair. The signature is
+        // well-formed (64 bytes, parses fine) but was never produced by
+        // claimed_signer's secret key.
+        let secp = Secp256k1::new();
+        let message = Message::from_digest(id);
+        let sig = secp.sign_schnorr_no_aux_rand(&message, &actual_signer);
+        let sig_hex = fedimint_core::hex::encode(sig.serialize());
+
+        let event = json!({
+            "id": id_hex,
+            "pubkey": pubkey_hex,
+            "created_at": created_at,
+            "kind": KIND_SERVICE_ANNOUNCEMENT,
+            "tags": tags,
+            "content": content_str,
+            "sig": sig_hex,
+        });
+
+        assert!(
+            parse_announcement(&event).is_none(),
+            "a self-consistent event signed by the wrong key must fail verify_schnorr"
+        );
+    }
+
     #[test]
     fn dedupe_newest_wins() {
         let keypair = test_keypair();
@@ -788,6 +857,61 @@ mod tests {
             server.free_domains.is_empty(),
             "no zero-price tier covering typical lengths: {:?}",
             server.free_domains
+        );
+    }
+
+    /// Pins the `TYPICAL_USERNAME_LENGTH` (8) threshold's exclusive side: a
+    /// `price == 0` tier whose `max_length` is one below the threshold does
+    /// not make the domain free-eligible, even though the price is zero —
+    /// the heuristic is about "free for typical-length names", not "has
+    /// any zero-price tier at all".
+    #[test]
+    fn free_domains_excludes_zero_price_tier_below_length_threshold() {
+        let keypair = test_keypair();
+        let mut content = valid_content();
+        content["pricing"] = json!([
+            {
+                "domain": "pay.example.com",
+                "currency": "msat",
+                "tiers": [
+                    {"max_length": 7, "price": 0}
+                ]
+            }
+        ]);
+        let event = make_announcement(&keypair, &content, 1_750_000_000);
+
+        let server = parse_announcement(&event).expect("valid announcement must parse");
+
+        assert!(
+            server.free_domains.is_empty(),
+            "max_length=7 is below the typical-length threshold of 8: {:?}",
+            server.free_domains
+        );
+    }
+
+    /// Pins the threshold's inclusive side: `max_length == 8` exactly does
+    /// count as covering typical lengths.
+    #[test]
+    fn free_domains_includes_zero_price_tier_at_length_threshold() {
+        let keypair = test_keypair();
+        let mut content = valid_content();
+        content["pricing"] = json!([
+            {
+                "domain": "pay.example.com",
+                "currency": "msat",
+                "tiers": [
+                    {"max_length": 8, "price": 0}
+                ]
+            }
+        ]);
+        let event = make_announcement(&keypair, &content, 1_750_000_000);
+
+        let server = parse_announcement(&event).expect("valid announcement must parse");
+
+        assert_eq!(
+            server.free_domains,
+            vec!["pay.example.com".to_string()],
+            "max_length=8 meets the threshold and should count as free"
         );
     }
 }
