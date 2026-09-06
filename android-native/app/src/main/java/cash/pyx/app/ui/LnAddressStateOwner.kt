@@ -12,6 +12,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class LnAddressState(
@@ -42,7 +43,9 @@ class LnAddressStateOwner(
 
     fun refresh(factoryHandle: Long) {
         val generation = ++refreshGeneration
-        mutableState.value = mutableState.value.copy(loading = true)
+        // A new refresh supersedes whatever message an earlier operation left behind — it's
+        // about to establish the current truth, so a stale error shouldn't outlive it.
+        mutableState.update { it.copy(loading = true, message = null) }
         scope.launch {
             val outcome = try {
                 coroutineScope {
@@ -57,35 +60,38 @@ class LnAddressStateOwner(
             }
             if (refreshGeneration != generation) return@launch
             if (outcome == null) {
-                mutableState.value = mutableState.value.copy(loading = false, message = UNEXPECTED_MESSAGE)
+                mutableState.update { it.copy(loading = false, message = UNEXPECTED_MESSAGE) }
                 return@launch
             }
             val (snapshotResult, discoveryResult) = outcome
-            var next = mutableState.value
-            next = when (snapshotResult) {
-                is NativeResult.Success -> next.copy(addresses = snapshotResult.value.addresses)
-                is NativeResult.Failure ->
-                    next.copy(message = LnaddrClaimPresentation.clockHint(snapshotResult.error.userMessage))
+            mutableState.update { current ->
+                var next = when (snapshotResult) {
+                    is NativeResult.Success -> current.copy(addresses = snapshotResult.value.addresses, message = null)
+                    is NativeResult.Failure ->
+                        current.copy(message = LnaddrClaimPresentation.clockHint(snapshotResult.error.userMessage))
+                }
+                next = when (discoveryResult) {
+                    is NativeResult.Success -> next.copy(servers = discoveryResult.value.servers)
+                    // Discovery is supplementary: keep whatever server list (previous or default)
+                    // is already shown rather than blanking it out over a transient failure.
+                    is NativeResult.Failure -> next
+                }
+                next.copy(loading = false)
             }
-            next = when (discoveryResult) {
-                is NativeResult.Success -> next.copy(servers = discoveryResult.value.servers)
-                // Discovery is supplementary: keep whatever server list (previous or default)
-                // is already shown rather than blanking it out over a transient failure.
-                is NativeResult.Failure -> next
-            }
-            mutableState.value = next.copy(loading = false)
         }
     }
 
     /** Recovers claimed addresses from the server, then refreshes regardless of outcome —
-     * a partial recovery is still worth reflecting in the address list. */
+     * a partial recovery is still worth reflecting in the address list. A recovery failure's
+     * message is necessarily transient: the unconditional refresh that follows clears it as
+     * soon as it starts, the same as any other stale message. */
     fun recover(factoryHandle: Long) {
         scope.launch {
             when (val result = api.lnaddrRecoverAsync(factoryHandle)) {
                 is NativeResult.Success -> {}
-                is NativeResult.Failure -> mutableState.value = mutableState.value.copy(
-                    message = LnaddrClaimPresentation.clockHint(result.error.userMessage),
-                )
+                is NativeResult.Failure -> mutableState.update {
+                    it.copy(message = LnaddrClaimPresentation.clockHint(result.error.userMessage))
+                }
             }
             refresh(factoryHandle)
         }
@@ -106,9 +112,9 @@ class LnAddressStateOwner(
                     onDone(true)
                 }
                 is NativeResult.Failure -> {
-                    mutableState.value = mutableState.value.copy(
-                        message = LnaddrClaimPresentation.clockHint(result.error.userMessage),
-                    )
+                    mutableState.update {
+                        it.copy(message = LnaddrClaimPresentation.clockHint(result.error.userMessage))
+                    }
                     onDone(false)
                 }
             }
@@ -135,16 +141,16 @@ class LnAddressStateOwner(
     }
 
     fun clearMessage() {
-        mutableState.value = mutableState.value.copy(message = null)
+        mutableState.update { it.copy(message = null) }
     }
 
     private fun mutate(factoryHandle: Long, call: suspend () -> NativeResult<LnaddrMutation>) {
         scope.launch {
             when (val result = call()) {
                 is NativeResult.Success -> refresh(factoryHandle)
-                is NativeResult.Failure -> mutableState.value = mutableState.value.copy(
-                    message = LnaddrClaimPresentation.clockHint(result.error.userMessage),
-                )
+                is NativeResult.Failure -> mutableState.update {
+                    it.copy(message = LnaddrClaimPresentation.clockHint(result.error.userMessage))
+                }
             }
         }
     }

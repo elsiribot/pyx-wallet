@@ -98,6 +98,26 @@ class LnAddressStateOwnerTest {
         assertFalse(owner.state.value.loading)
     }
 
+    @Test fun `a fully-successful refresh clears a stale message left by an earlier failure`() = runTest {
+        val api = FakeLnaddrApi()
+        val owner = LnAddressStateOwner(api, backgroundScope)
+        owner.refresh(1)
+        runCurrent()
+        api.failSnapshot("boom")
+        api.succeedDiscovery(server("primal.net"))
+        runCurrent()
+        assertEquals("boom", owner.state.value.message)
+
+        owner.refresh(1)
+        runCurrent()
+        api.succeedSnapshot(address("alice"))
+        api.succeedDiscovery(server("primal.net"))
+        runCurrent()
+
+        assertNull(owner.state.value.message)
+        assertEquals(listOf("alice"), owner.state.value.addresses.map(LnAddress::username))
+    }
+
     @Test fun `claim success triggers a refresh and reports done true`() = runTest {
         val api = FakeLnaddrApi()
         api.claimResult = NativeResult.Success(address("carol"))
@@ -229,9 +249,12 @@ class LnAddressStateOwnerTest {
         owner.recover(1)
         runCurrent()
 
+        // The unconditional refresh recover() triggers clears the message as soon as it starts
+        // (same stale-message rule refresh() applies everywhere else), so recovery's own
+        // failure message is necessarily transient rather than the value that survives.
         assertEquals(1, api.recoverCalls)
         assertEquals(1, api.snapshotCallCount)
-        assertEquals("recovery failed", owner.state.value.message)
+        assertNull(owner.state.value.message)
     }
 
     private fun address(
