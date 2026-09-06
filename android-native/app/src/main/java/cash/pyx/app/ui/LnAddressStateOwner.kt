@@ -121,6 +121,15 @@ class LnAddressStateOwner(
         }
     }
 
+    /** Checks whether [username]@[domain] is claimable on the server at [origin]. Pure
+     * request/response — no state mutation — so the claim sheet can call it directly from
+     * a debounced `LaunchedEffect` without going through `scope.launch`. */
+    suspend fun quote(factoryHandle: Long, origin: String, domain: String, username: String): ClaimCheck =
+        when (val result = api.lnaddrQuoteAsync(factoryHandle, origin, domain, username)) {
+            is NativeResult.Success -> LnaddrClaimPresentation.checkFromQuote(result.value)
+            is NativeResult.Failure -> ClaimCheck.Error(LnaddrClaimPresentation.clockHint(result.error.userMessage))
+        }
+
     fun setPrimary(factoryHandle: Long, a: LnAddress) = mutate(factoryHandle) {
         api.lnaddrSetPrimaryAsync(factoryHandle, a.domain, a.username)
     }

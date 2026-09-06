@@ -7,6 +7,7 @@ import cash.pyx.app.nativeapi.LnAddress
 import cash.pyx.app.nativeapi.LnAddressSnapshot
 import cash.pyx.app.nativeapi.LnaddrDiscovery
 import cash.pyx.app.nativeapi.LnaddrMutation
+import cash.pyx.app.nativeapi.LnaddrQuote
 import cash.pyx.app.nativeapi.LnaddrRecovery
 import cash.pyx.app.nativeapi.LnaddrServer
 import cash.pyx.app.nativeapi.NativeResult
@@ -256,6 +257,27 @@ class LnAddressStateOwnerTest {
         assertEquals(listOf("alice"), owner.state.value.addresses.map(LnAddress::username))
     }
 
+    @Test fun `quote maps a successful lookup to a ClaimCheck without touching state`() = runTest {
+        val api = FakeLnaddrApi()
+        api.quoteResult = NativeResult.Success(LnaddrQuote.Free)
+        val owner = LnAddressStateOwner(api, backgroundScope)
+
+        val check = owner.quote(1, "https://primal.net", "primal.net", "carol")
+
+        assertEquals(ClaimCheck.Available, check)
+        assertNull(owner.state.value.message)
+    }
+
+    @Test fun `quote clock-hints an unauthorized failure`() = runTest {
+        val api = FakeLnaddrApi()
+        api.quoteResult = NativeResult.Failure(AndroidError("unauthorized", "unauthorized: bad signature", false))
+        val owner = LnAddressStateOwner(api, backgroundScope)
+
+        val check = owner.quote(1, "https://primal.net", "primal.net", "carol")
+
+        assertTrue((check as ClaimCheck.Error).hint.lowercase().contains("clock"))
+    }
+
     @Test fun `recover failure keeps its message visible and does not refresh`() = runTest {
         val api = FakeLnaddrApi()
         api.recoverResult = NativeResult.Failure(AndroidError("unauthorized", "unauthorized: expired signature", false))
@@ -304,6 +326,7 @@ class LnAddressStateOwnerTest {
         var releaseResult: NativeResult<LnaddrMutation> = NativeResult.Success(LnaddrMutation(true))
         var repointResult: NativeResult<LnaddrMutation> = NativeResult.Success(LnaddrMutation(true))
         var recoverResult: NativeResult<LnaddrRecovery> = NativeResult.Success(LnaddrRecovery(0))
+        var quoteResult: NativeResult<LnaddrQuote> = NativeResult.Success(LnaddrQuote.Free)
 
         var claimCalls = 0
         var setPrimaryCalls = 0
@@ -341,6 +364,8 @@ class LnAddressStateOwnerTest {
             recoverCalls++
             return recoverResult
         }
+        override suspend fun lnaddrQuoteAsync(factoryHandle: Long, origin: String, domain: String, username: String): NativeResult<LnaddrQuote> =
+            quoteResult
 
         override fun listFiatCurrencies() = NativeResult.Success(FiatCurrencies(emptyList()))
         override fun classifyInput(payload: String) = NativeResult.Success(InputType.UNKNOWN)
