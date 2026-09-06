@@ -22,6 +22,7 @@ android-jni = ["dep:jni"]
 fedimint-api-client = "0.11.0"
 fedimint-bip39 = "0.11.0"
 fedimint-core = "0.11.0"
+fedimint-derive-secret = "0.11.0"
 fedimint-connectors = "0.11.0"
 fedimint-client = "0.11.0"
 fedimint-eventlog = "0.11.0"

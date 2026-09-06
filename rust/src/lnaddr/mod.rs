@@ -4,7 +4,10 @@
 //! address" invariant. Networking (registering/renewing addresses with an
 //! lnaddrd server) and UI are added by later tasks.
 
+mod identity;
 mod store;
 
+#[allow(unused_imports)] // Consumed once Task 3+ wire in NIP-98 auth events.
+pub(crate) use identity::{nostr_keypair, nostr_pubkey_hex};
 #[allow(unused_imports)] // Consumed once Task 4-6 wire in the service layer.
 pub(crate) use store::{LnAddressRecord, LnAddressStore};
