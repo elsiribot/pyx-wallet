@@ -50,6 +50,14 @@ fn now_secs() -> u64 {
 /// message) or a "not found" response. Either way the server can't do
 /// anything useful with this record either, so treating it as an error
 /// would just wedge the UI on a dead/unreachable-auth server.
+///
+/// `LnaddrApi::remove` has no structured status code to match on — its
+/// non-204, non-401 errors all come from `legacy_error_message`, which
+/// renders as `"lnaddrd request failed with status {n}"`, so `"404"` is
+/// what actually appears on the wire today; the `"not found"` substring
+/// check is currently dead (no code path in `api.rs` produces that text)
+/// but kept in case the server-side error body ever grows a `not_found`
+/// JSON code that flows through unchanged.
 fn is_release_recoverable(error: &str) -> bool {
     let lower = error.to_lowercase();
     lower.contains("401")
@@ -98,9 +106,15 @@ impl<T: HttpTransport> LnAddressService<T> {
 
     /// `destination` is `client.lnurl()` of the federation claiming the
     /// address. Persists the server's `management_token`; the store's
-    /// primary invariant forces `is_primary` on the federation's first
+    /// primary invariant may force `is_primary` on the federation's first
     /// record regardless of what's passed in, so the returned record is
-    /// re-read from the store rather than built by hand.
+    /// preferably re-read from the store rather than the one built here.
+    /// That re-read is best-effort, not load-bearing: a concurrent
+    /// `release` of this exact domain/username between the `upsert` and
+    /// the `get` (a vanishingly rare race, but one this crate has already
+    /// been burned by a native panic once) would otherwise turn a `.expect`
+    /// into an unwind across the JNI boundary, so a `None` here falls back
+    /// to the just-built record instead of panicking.
     pub async fn claim(
         &self,
         origin: &str,
@@ -116,24 +130,20 @@ impl<T: HttpTransport> LnAddressService<T> {
             .register_free(origin, domain, name, &destination)
             .await?;
 
-        self.store
-            .upsert(LnAddressRecord {
-                domain: domain.to_string(),
-                username: name.to_string(),
-                server_origin: origin.to_string(),
-                federation_id: Some(federation),
-                destination,
-                is_primary: false,
-                claimed_at_secs: now_secs(),
-                management_token,
-            })
-            .await;
+        let built = LnAddressRecord {
+            domain: domain.to_string(),
+            username: name.to_string(),
+            server_origin: origin.to_string(),
+            federation_id: Some(federation),
+            destination,
+            is_primary: false,
+            claimed_at_secs: now_secs(),
+            management_token,
+        };
 
-        Ok(self
-            .store
-            .get(domain, name)
-            .await
-            .expect("just upserted this exact domain/username"))
+        self.store.upsert(built.clone()).await;
+
+        Ok(self.store.get(domain, name).await.unwrap_or(built))
     }
 
     pub async fn set_primary(&self, domain: &str, name: &str) -> Result<(), String> {
@@ -355,14 +365,14 @@ mod tests {
             self.recorded.lock().unwrap().len()
         }
 
-        fn last_method(&self) -> String {
+        /// `(method, url)` of the most recent request.
+        fn last_request(&self) -> (String, String) {
             self.recorded
                 .lock()
                 .unwrap()
                 .last()
                 .cloned()
                 .expect("expected at least one recorded request")
-                .0
         }
     }
 
@@ -399,13 +409,37 @@ mod tests {
         }
     }
 
+    /// Answers with different `(status, body)` per URL prefix, or an `Err`
+    /// for anything unlisted. Lets `recover_skips_failing_server_but_uses_others`
+    /// exercise per-server failure isolation, which a single-canned-response
+    /// `FakeTransport` can't: each origin needs its own outcome.
+    struct MixedTransport {
+        responses: Vec<(String, Result<(u16, Vec<u8>), String>)>,
+    }
+
+    impl HttpTransport for MixedTransport {
+        async fn execute(
+            &self,
+            _method: &str,
+            url: &str,
+            _headers: Vec<(String, String)>,
+            _body: Option<Vec<u8>>,
+        ) -> Result<(u16, Vec<u8>), String> {
+            self.responses
+                .iter()
+                .find(|(prefix, _)| url.starts_with(prefix.as_str()))
+                .map(|(_, result)| result.clone())
+                .unwrap_or_else(|| Err(format!("unexpected url in test transport: {url}")))
+        }
+    }
+
     #[tokio::test]
     async fn claim_persists_and_first_is_primary() {
-        let transport = FakeTransport::new(
+        let transport = Arc::new(FakeTransport::new(
             200,
             r#"{"address":"alice@example.com","management_token":"secret-token","active":true}"#,
-        );
-        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport);
+        ));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
         let fed = FederationId::dummy();
 
         let record = svc
@@ -429,6 +463,11 @@ mod tests {
         );
         assert_eq!(record.management_token, Some("secret-token".to_string()));
 
+        assert_eq!(transport.request_count(), 1);
+        let (method, url) = transport.last_request();
+        assert_eq!(method, "POST");
+        assert_eq!(url, "https://pay.example.com/api/v1/register");
+
         let stored = svc.snapshot().await;
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].username, "alice");
@@ -436,8 +475,8 @@ mod tests {
 
     #[tokio::test]
     async fn release_promotes_next() {
-        let transport = FakeTransport::new(204, "");
-        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport);
+        let transport = Arc::new(FakeTransport::new(204, ""));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
         let fed = FederationId::dummy();
 
         svc.store
@@ -461,6 +500,11 @@ mod tests {
             .await
             .expect("release should succeed on a 204");
 
+        assert_eq!(transport.request_count(), 1);
+        let (method, url) = transport.last_request();
+        assert_eq!(method, "DELETE");
+        assert_eq!(url, "https://pay.example.com/lnaddress/remove");
+
         assert!(svc.store.get("example.com", "alice").await.is_none());
         assert!(
             svc.store
@@ -474,26 +518,51 @@ mod tests {
 
     #[tokio::test]
     async fn release_removes_locally_on_remote_401() {
-        let transport = FakeTransport::new(401, "");
-        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport);
+        let transport = Arc::new(FakeTransport::new(401, ""));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
         svc.store.upsert(record(None, "LNURL1A", 100)).await;
 
         svc.release("example.com", "alice")
             .await
             .expect("a 401 must not wedge local removal");
 
+        assert_eq!(
+            transport.request_count(),
+            1,
+            "release must still attempt the remote DELETE before falling back"
+        );
+        assert_eq!(transport.last_request().0, "DELETE");
+        assert!(svc.store.get("example.com", "alice").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn release_removes_locally_on_remote_404() {
+        let transport = Arc::new(FakeTransport::new(404, ""));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
+        svc.store.upsert(record(None, "LNURL1A", 100)).await;
+
+        svc.release("example.com", "alice")
+            .await
+            .expect("a 404 must not wedge local removal");
+
+        assert_eq!(transport.request_count(), 1);
         assert!(svc.store.get("example.com", "alice").await.is_none());
     }
 
     #[tokio::test]
     async fn release_surfaces_other_errors_without_local_removal() {
-        let transport = FakeTransport::new(500, "");
-        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport);
+        let transport = Arc::new(FakeTransport::new(500, ""));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
         svc.store.upsert(record(None, "LNURL1A", 100)).await;
 
         let result = svc.release("example.com", "alice").await;
 
         assert!(result.is_err(), "a 500 must surface as an error");
+        assert_eq!(
+            transport.request_count(),
+            1,
+            "the remote DELETE must still have been attempted"
+        );
         assert!(
             svc.store.get("example.com", "alice").await.is_some(),
             "the record must survive an unrecoverable remote error"
@@ -515,7 +584,7 @@ mod tests {
             1,
             "drifted destination must trigger exactly one request"
         );
-        assert_eq!(transport.last_method(), "PUT");
+        assert_eq!(transport.last_request().0, "PUT");
         assert_eq!(
             svc.store
                 .get("example.com", "alice")
@@ -540,8 +609,8 @@ mod tests {
             {"domain":"example.com","username":"alice","destination":"LNURL1KNOWN"},
             {"domain":"example.com","username":"ghost","destination":"LNURL1UNKNOWN"}
         ]}"#;
-        let transport = FakeTransport::new(200, body);
-        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport);
+        let transport = Arc::new(FakeTransport::new(200, body));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
         let fed = FederationId::dummy();
         let known = vec![(fed, "LNURL1KNOWN".to_string())];
 
@@ -550,6 +619,11 @@ mod tests {
             .await;
 
         assert_eq!(added, 2);
+        assert_eq!(transport.request_count(), 1, "one GET per origin");
+        let (method, url) = transport.last_request();
+        assert_eq!(method, "GET");
+        assert_eq!(url, "https://pay.example.com/api/v1/addresses");
+
         assert_eq!(
             svc.store
                 .get("example.com", "alice")
@@ -572,8 +646,8 @@ mod tests {
     #[tokio::test]
     async fn recover_is_idempotent() {
         let body = r#"{"addresses":[{"domain":"example.com","username":"alice","destination":"LNURL1KNOWN"}]}"#;
-        let transport = FakeTransport::new(200, body);
-        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport);
+        let transport = Arc::new(FakeTransport::new(200, body));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
         let origins = vec!["https://pay.example.com".to_string()];
         let known: Vec<(FederationId, String)> = Vec::new();
 
@@ -582,5 +656,42 @@ mod tests {
 
         let second = svc.recover_from_origins(&origins, &known).await;
         assert_eq!(second, 0, "already-known records must not be re-added");
+
+        assert_eq!(
+            transport.request_count(),
+            2,
+            "each recover call still lists the server, even when nothing new comes of it"
+        );
+    }
+
+    #[tokio::test]
+    async fn recover_skips_failing_server_but_uses_others() {
+        let ok_body = br#"{"addresses":[{"domain":"example.com","username":"alice","destination":"LNURL1KNOWN"}]}"#;
+        let transport = MixedTransport {
+            responses: vec![
+                (
+                    "https://dead.example.com".to_string(),
+                    Err("connection refused".to_string()),
+                ),
+                (
+                    "https://pay.example.com".to_string(),
+                    Ok((200, ok_body.to_vec())),
+                ),
+            ],
+        };
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport);
+        let origins = vec![
+            "https://dead.example.com".to_string(),
+            "https://pay.example.com".to_string(),
+        ];
+        let known: Vec<(FederationId, String)> = Vec::new();
+
+        let added = svc.recover_from_origins(&origins, &known).await;
+
+        assert_eq!(
+            added, 1,
+            "a failing server must not block recovery from the others"
+        );
+        assert!(svc.store.get("example.com", "alice").await.is_some());
     }
 }

@@ -330,8 +330,16 @@ impl ConduitClientFactory {
     fn spawn_lnaddr_sync(&self, client: ConduitClient, federation_id: FederationId) {
         let lnaddr = self.lnaddr.clone();
         tokio::spawn(async move {
-            if let Ok(lnurl) = client.lnurl().await {
-                lnaddr.sync_destinations(federation_id, &lnurl).await;
+            match client.lnurl().await {
+                Ok(lnurl) => lnaddr.sync_destinations(federation_id, &lnurl).await,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "conduit",
+                        federation_id = %federation_id,
+                        error,
+                        "lnaddr: could not fetch lnurl for destination sync",
+                    );
+                }
             }
         });
     }
