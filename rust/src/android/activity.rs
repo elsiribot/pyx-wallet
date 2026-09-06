@@ -255,7 +255,9 @@ impl From<ConduitPayment> for PaymentSummaryDto {
                 Some(false) => "failed",
             },
             fiat_amount: has_fiat_pair.then(|| fiat_amount.unwrap().to_string()),
-            fiat_currency_code: has_fiat_pair.then_some(fiat_currency_code.unwrap()),
+            // then(), not then_some(): then_some evaluates its argument even
+            // when the pair is absent, so the unwrap must stay lazy.
+            fiat_currency_code: has_fiat_pair.then(|| fiat_currency_code.unwrap()),
         }
     }
 }
@@ -280,6 +282,37 @@ mod tests {
             fiat_amount: Some(1.25),
             fiat_currency_code: Some("USD".into()),
         }
+    }
+
+    #[test]
+    fn summary_conversion_survives_payments_without_fiat_metadata() {
+        // Payments recorded before fiat snapshots existed (e.g. history
+        // upgraded from the Flutter wallet) carry no fiat fields. Converting
+        // them must not panic and must omit the fiat pair.
+        let no_fiat = ConduitPayment {
+            fiat_amount: None,
+            fiat_currency_code: None,
+            ..payment()
+        };
+        let summary = PaymentSummaryDto::from(no_fiat);
+        assert_eq!(summary.fiat_amount, None);
+        assert_eq!(summary.fiat_currency_code, None);
+
+        // One-sided fiat metadata must degrade to no pair, not panic.
+        let amount_only = ConduitPayment {
+            operation_id: "amount-only".into(),
+            fiat_currency_code: None,
+            ..payment()
+        };
+        let code_only = ConduitPayment {
+            operation_id: "code-only".into(),
+            fiat_amount: None,
+            ..payment()
+        };
+        let json =
+            payment_history_page_json(vec![amount_only, code_only, payment()], "", 10).unwrap();
+        assert!(json.contains("\"fiatAmount\":null"));
+        assert!(json.contains("\"fiatAmount\":\"1.25\""));
     }
 
     #[test]
