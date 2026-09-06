@@ -81,10 +81,26 @@ class LnaddrParsingTest {
         assertEquals(64, (api.lnaddrSnapshotAsync(1) as NativeResult.Success).value.addresses.size)
     }
 
-    @Test fun `snapshot rejects an over-long domain or username`() = runTest {
-        val longDomain = address(domain = "d".repeat(65))
+    @Test fun `snapshot allows a domain up to the RFC 1035 253-char limit`() = runTest {
+        val domain253 = address(domain = "d".repeat(253))
         val api = JniNativeWalletApi(libraryLoader = {}, lnaddrSnapshotAsyncBinding = { _, callback ->
-            callback.onSuccess(7, """{"addresses":[$longDomain]}"""); 7
+            callback.onSuccess(7, """{"addresses":[$domain253]}"""); 7
+        })
+        assertEquals(253, (api.lnaddrSnapshotAsync(1) as NativeResult.Success).value.addresses.single().domain.length)
+    }
+
+    @Test fun `snapshot rejects a domain over the 253-char limit`() = runTest {
+        val domain254 = address(domain = "d".repeat(254))
+        val api = JniNativeWalletApi(libraryLoader = {}, lnaddrSnapshotAsyncBinding = { _, callback ->
+            callback.onSuccess(8, """{"addresses":[$domain254]}"""); 8
+        })
+        assertTrue(api.lnaddrSnapshotAsync(1) is NativeResult.Failure)
+    }
+
+    @Test fun `snapshot rejects a username over the 64-char limit`() = runTest {
+        val longUsername = address(username = "u".repeat(65))
+        val api = JniNativeWalletApi(libraryLoader = {}, lnaddrSnapshotAsyncBinding = { _, callback ->
+            callback.onSuccess(9, """{"addresses":[$longUsername]}"""); 9
         })
         assertTrue(api.lnaddrSnapshotAsync(1) is NativeResult.Failure)
     }

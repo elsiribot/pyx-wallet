@@ -469,8 +469,8 @@ class JniNativeWalletApi internal constructor(
     private fun JSONObject.toLnAddress(): LnAddress {
         if (keys().asSequence().toSet() != LNADDRESS_FIELDS) throw JSONException("address fields")
         return LnAddress(
-            domain = requiredLnaddrField("domain"),
-            username = requiredLnaddrField("username"),
+            domain = requiredLnaddrDomain("domain"),
+            username = requiredLnaddrUsername("username"),
             serverOrigin = requiredPayload("serverOrigin"),
             federationId = optionalPayload("federationId"),
             destination = requiredPayload("destination"),
@@ -479,8 +479,17 @@ class JniNativeWalletApi internal constructor(
         )
     }
 
-    private fun JSONObject.requiredLnaddrField(key: String): String = requiredString(key).also {
-        if (it.length > MAX_LNADDR_FIELD_CHARS) throw JSONException(key)
+    // lnaddrd's username cap (64 chars) is a policy limit; the domain cap (253
+    // chars) follows RFC 1035's max DNS name length and matches Rust's own
+    // request-side validate_domain in rust/src/android/lnaddr_requests.rs.
+    private fun JSONObject.requiredLnaddrUsername(key: String): String = requiredString(key).also {
+        if (it.length > MAX_LNADDR_USERNAME_CHARS) throw JSONException(key)
+    }
+
+    // Uses getString directly rather than requiredString: requiredString's own
+    // MAX_STRING_CHARS (128) cap is shorter than RFC 1035's 253-char domain limit.
+    private fun JSONObject.requiredLnaddrDomain(key: String): String = getString(key).also {
+        if (it.isEmpty() || it.length > MAX_LNADDR_DOMAIN_CHARS) throw JSONException(key)
     }
 
     private fun parseLnAddressSnapshot(json: String): LnAddressSnapshot {
@@ -495,7 +504,7 @@ class JniNativeWalletApi internal constructor(
             val array = getJSONArray(key)
             if (array.length() > MAX_LNADDR_DOMAINS_PER_SERVER) throw JSONException(key)
             return (0 until array.length()).map { index ->
-                array.getString(index).also { if (it.isEmpty() || it.length > MAX_LNADDR_FIELD_CHARS) throw JSONException(key) }
+                array.getString(index).also { if (it.isEmpty() || it.length > MAX_LNADDR_DOMAIN_CHARS) throw JSONException(key) }
             }
         }
         return LnaddrServer(requiredPayload("origin"), requiredString("name"), domainList("domains"), domainList("freeDomains"))
@@ -919,7 +928,8 @@ class JniNativeWalletApi internal constructor(
         const val MAX_LNADDRESSES = 64
         const val MAX_LNADDR_SERVERS = 32
         const val MAX_LNADDR_DOMAINS_PER_SERVER = 32
-        const val MAX_LNADDR_FIELD_CHARS = 64
+        const val MAX_LNADDR_USERNAME_CHARS = 64
+        const val MAX_LNADDR_DOMAIN_CHARS = 253
         val LNADDRESS_FIELDS = setOf("claimedAtSecs", "destination", "domain", "federationId", "isPrimary", "serverOrigin", "username")
         val LNADDR_QUOTE_FIELDS = setOf("priceMsat", "state", "reason")
     }
