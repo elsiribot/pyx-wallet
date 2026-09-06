@@ -71,10 +71,18 @@ impl AndroidError {
         )
     }
 
+    /// Like [`Self::internal`], but records the discarded upstream cause in
+    /// the on-device log first. Only the static message crosses JNI.
+    pub(crate) fn internal_logged(context: &'static str, detail: impl fmt::Debug) -> Self {
+        tracing::warn!(target: "conduit", context, detail = ?detail, "operation failed");
+        Self::internal()
+    }
+
     /// Coarse but truthful mapping for Lightning failures: gateway
     /// availability is the one common, actionable cause worth naming. The
     /// message stays static — no bridge input or upstream detail crosses JNI.
     pub(crate) fn from_lightning(error: &str) -> Self {
+        tracing::warn!(target: "conduit", error, "lightning operation failed");
         if error.to_ascii_lowercase().contains("gateway") {
             Self::new(
                 AndroidErrorCode::Internal,
@@ -87,8 +95,10 @@ impl AndroidError {
     }
 
     /// Convert a caught panic without formatting its payload. Panic strings can
-    /// accidentally contain sensitive inputs and must not cross JNI.
+    /// accidentally contain sensitive inputs and must not cross JNI or be
+    /// persisted; only the fact and time of the panic go to the on-device log.
     pub(crate) fn from_panic(_: Box<dyn Any + Send>) -> Self {
+        tracing::error!(target: "conduit", "native operation panicked");
         Self::internal()
     }
 }

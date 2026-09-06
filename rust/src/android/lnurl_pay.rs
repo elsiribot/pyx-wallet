@@ -78,7 +78,7 @@ pub(crate) async fn prepare_async_with_handle(
     let lnurl = parse_lnurl(&request).ok_or_else(invalid_lnurl)?;
     let response = lnurl_fetch_limits(&lnurl)
         .await
-        .map_err(|_| AndroidError::internal())?;
+        .map_err(|e| AndroidError::internal_logged("lnurl_fetch_limits", &e))?;
     let min_sat = response.min_sats();
     let max_sat = response.max_sats();
     validate_limits(min_sat, max_sat)?;
@@ -125,7 +125,7 @@ pub(crate) async fn prepare_quote_async_with_handle(
 
     let invoice = lnurl_resolve(&session.response, amount_sat)
         .await
-        .map_err(|_| AndroidError::internal())?;
+        .map_err(|e| AndroidError::internal_logged("lnurl_resolve", &e))?;
     quotes::prepare_resolved_lightning_async_with_handle(client_handle, invoice).await
 }
 

@@ -235,7 +235,7 @@ pub(crate) async fn create_async(database_handle: u64) -> Result<String, Android
     let seed_words = mnemonic.0.words().map(str::to_owned).collect::<Vec<_>>();
     let factory = ConduitClientFactory::init(&database, &mnemonic)
         .await
-        .map_err(|_| AndroidError::internal())?;
+        .map_err(|e| AndroidError::internal_logged("factory_init", &e))?;
     let factory_handle = global_insert(HandleKind::Factory, factory)?;
     bootstrap::set_ready(database_handle, factory_handle)?;
     serialize(&CreateWalletDto {
@@ -257,7 +257,7 @@ pub(crate) async fn restore_async(
     let database = global_get::<DatabaseWrapper>(database_handle, HandleKind::Database)?;
     let factory = ConduitClientFactory::init(&database, &mnemonic)
         .await
-        .map_err(|_| AndroidError::internal())?;
+        .map_err(|e| AndroidError::internal_logged("factory_init", &e))?;
     let factory_handle = global_insert(HandleKind::Factory, factory)?;
     bootstrap::set_ready(database_handle, factory_handle)?;
     serialize(&RestoreWalletDto { factory_handle })
@@ -290,7 +290,7 @@ pub(crate) async fn join_federation_async(
     } else {
         factory.join(&invite).await
     }
-    .map_err(|_| AndroidError::internal())?;
+    .map_err(|e| AndroidError::internal_logged("join_or_recover_federation", &e))?;
     let selected_id = client.federation_id().to_string();
     build_snapshot(&factory, Some(&selected_id), Some(client)).await
 }

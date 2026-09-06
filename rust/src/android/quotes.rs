@@ -200,7 +200,7 @@ pub(crate) async fn prepare_onchain_async_with_handle(
     let fee_sat = client
         .onchain_calculate_fees(&address, amount_sat)
         .await
-        .map_err(|_| AndroidError::internal())?;
+        .map_err(|e| AndroidError::internal_logged("onchain_calculate_fees", &e))?;
     let quote_handle = global_insert(
         HandleKind::Quote,
         QuoteEntry::new(
@@ -274,7 +274,7 @@ pub(crate) async fn execute_onchain_async(
         .await;
     quote.consume()?;
     let _ = global_close(quote_handle, HandleKind::Quote);
-    let operation_id = result.map_err(|_| AndroidError::internal())?;
+    let operation_id = result.map_err(|e| AndroidError::internal_logged("onchain_send", &e))?;
     reconciliation::attach_operation(&client, &correlation_id, operation_id).await?;
     serialize(&ExecutedOnchainDto {
         correlation_id,

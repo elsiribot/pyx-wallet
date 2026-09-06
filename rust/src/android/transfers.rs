@@ -88,7 +88,7 @@ pub(crate) async fn receive_onchain_async(client_handle: u64) -> Result<String, 
         None => client
             .onchain_receive_address()
             .await
-            .map_err(|_| AndroidError::internal())?,
+            .map_err(|e| AndroidError::internal_logged("onchain_receive_address", &e))?,
     };
     serialize(&OnchainReceiveDto {
         receive_type: "onchain",
@@ -115,7 +115,7 @@ pub(crate) async fn create_ecash_async(
     let (operation_id, ecash) = client
         .ecash_send_with_meta(amount_sat, reconciliation::marker(&correlation_id))
         .await
-        .map_err(|_| AndroidError::internal())?;
+        .map_err(|e| AndroidError::internal_logged("ecash_send", &e))?;
     if let Some(operation_id) = operation_id {
         reconciliation::attach_operation(&client, &correlation_id, operation_id).await?;
     }
@@ -149,7 +149,7 @@ pub(crate) async fn claim_ecash_async(
     let operation_id = client
         .ecash_receive_with_meta(&ecash, reconciliation::marker(&correlation_id))
         .await
-        .map_err(|_| AndroidError::internal())?;
+        .map_err(|e| AndroidError::internal_logged("ecash_receive", &e))?;
     if let Some(operation_id) = operation_id {
         reconciliation::attach_operation(&client, &correlation_id, operation_id).await?;
     }

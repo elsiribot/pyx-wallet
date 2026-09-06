@@ -86,6 +86,7 @@ pub(crate) fn take_current() -> Result<Option<BootstrapResult>, AndroidError> {
 /// Activity/repository bootstrap calls idempotent.
 pub(crate) async fn run_async(files_dir: String) -> Result<BootstrapResult, AndroidError> {
     validate_files_dir(&files_dir)?;
+    super::logging::init(&files_dir);
     let _operation = lock_operation().await;
 
     if let Some(result) = *BOOTSTRAP

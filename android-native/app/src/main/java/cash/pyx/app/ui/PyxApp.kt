@@ -86,8 +86,10 @@ import cash.pyx.app.ui.theme.PyxSurface2
 import cash.pyx.app.ui.theme.PyxText
 import cash.pyx.app.ui.theme.PyxTheme
 import cash.pyx.app.ui.theme.PyxType
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** OutlinedTextField restyled to the prototype input: surface fill, 12dp radius, quiet border. */
 @Composable
@@ -1166,6 +1168,19 @@ private fun ManageContent(
                             valueStyle = PyxType.settingsValue, valueColor = PyxFaint, chevron = true)
                     }
                 }
+                SectionLabel("Troubleshooting")
+                PyxCard(padding = 0.dp) {
+                    Column(Modifier.padding(horizontal = 15.dp)) {
+                        CardRow("Export debug data", value = "Logs + wallet DB",
+                            valueStyle = PyxType.settingsValue, valueColor = PyxFaint, chevron = true,
+                            onClick = { submit("export_debug", 0, "", 0) })
+                    }
+                }
+                Text(
+                    "The export contains the wallet database and recent logs. Anyone with the file can spend this wallet's balance — share it only with someone you trust.",
+                    style = PyxType.rowSub, color = PyxFaint,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                 Row(Modifier.padding(top = 8.dp)) {
                     SettingsPresentation.links.forEach { link -> PyxTextLink(link.label, { uriHandler.openUri(link.url) }) }
@@ -2937,6 +2952,7 @@ fun PyxApp(
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as androidx.fragment.app.FragmentActivity
     val authenticator = remember(activity, authenticatorFactory) { authenticatorFactory(activity) }
+    val exportScope = rememberCoroutineScope()
     LaunchedEffect(ecashQrState.error) {
         ecashQrState.error?.let(viewModel::operationFailure)
     }
@@ -3021,6 +3037,14 @@ fun PyxApp(
             "parse_bitcoin" -> viewModel.parseBitcoin(text)
             "execute_lightning" -> text.toLongOrNull()?.let { quote -> guarded("Send Lightning payment") { viewModel.executeLightning(client, quote) } }
             "execute_onchain" -> text.toLongOrNull()?.let { quote -> guarded("Send on-chain payment") { viewModel.executeOnchain(client, quote) } }
+            "export_debug" -> guarded("Export wallet debug data") {
+                exportScope.launch {
+                    runCatching {
+                        val zip = withContext(Dispatchers.IO) { cash.pyx.app.data.DebugExport.create(context) }
+                        context.startActivity(cash.pyx.app.data.DebugExport.shareIntent(context, zip))
+                    }.onFailure { viewModel.operationFailure("The debug export could not be created.") }
+                }
+            }
         } },
     )
     }
