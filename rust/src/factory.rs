@@ -203,6 +203,13 @@ impl ConduitClientFactory {
         nostr_keypair(&self.mnemonic)
     }
 
+    /// The wallet's Lightning Address service (claim/sync/recover), shared
+    /// across every federation client this factory creates/loads. Backing
+    /// accessor for the `lnaddr*` JNI surface.
+    pub(crate) fn lnaddr(&self) -> Arc<LnAddressServiceImpl> {
+        self.lnaddr.clone()
+    }
+
     fn client_database(&self, federation_id: FederationId) -> Database {
         self.db.with_prefix(self.client_prefix(federation_id))
     }

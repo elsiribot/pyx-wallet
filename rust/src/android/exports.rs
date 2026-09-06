@@ -1137,6 +1137,150 @@ pub extern "system" fn Java_cash_pyx_app_nativeapi_NativeBindings_receiveLnurlAs
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_cash_pyx_app_nativeapi_NativeBindings_lnaddrSnapshotAsync<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    factory_handle: jlong,
+    callback: JObject<'local>,
+) -> jlong {
+    start_async_request(
+        &mut env,
+        callback,
+        async_requests::SnapshotRequest::LnaddrSnapshot,
+        factory_handle,
+    )
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cash_pyx_app_nativeapi_NativeBindings_lnaddrDiscoverAsync<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    factory_handle: jlong,
+    callback: JObject<'local>,
+) -> jlong {
+    start_async_request(
+        &mut env,
+        callback,
+        async_requests::SnapshotRequest::LnaddrDiscover,
+        factory_handle,
+    )
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cash_pyx_app_nativeapi_NativeBindings_lnaddrQuoteAsync<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    factory: jlong,
+    origin: JString<'local>,
+    domain: JString<'local>,
+    username: JString<'local>,
+    callback: JObject<'local>,
+) -> jlong {
+    let request = catch_unwind(AssertUnwindSafe(|| {
+        Ok(async_requests::SnapshotRequest::LnaddrQuote(
+            checked_handle(factory)?,
+            owned_payment_input(&mut env, &origin)?,
+            owned_payment_input(&mut env, &domain)?,
+            owned_payment_input(&mut env, &username)?,
+        ))
+    }));
+    start_request_result(&mut env, callback, request)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cash_pyx_app_nativeapi_NativeBindings_lnaddrClaimAsync<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    client: jlong,
+    origin: JString<'local>,
+    domain: JString<'local>,
+    username: JString<'local>,
+    callback: JObject<'local>,
+) -> jlong {
+    let request = catch_unwind(AssertUnwindSafe(|| {
+        Ok(async_requests::SnapshotRequest::LnaddrClaim(
+            checked_handle(client)?,
+            owned_payment_input(&mut env, &origin)?,
+            owned_payment_input(&mut env, &domain)?,
+            owned_payment_input(&mut env, &username)?,
+        ))
+    }));
+    start_request_result(&mut env, callback, request)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cash_pyx_app_nativeapi_NativeBindings_lnaddrSetPrimaryAsync<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    factory: jlong,
+    domain: JString<'local>,
+    username: JString<'local>,
+    callback: JObject<'local>,
+) -> jlong {
+    let request = catch_unwind(AssertUnwindSafe(|| {
+        Ok(async_requests::SnapshotRequest::LnaddrSetPrimary(
+            checked_handle(factory)?,
+            owned_payment_input(&mut env, &domain)?,
+            owned_payment_input(&mut env, &username)?,
+        ))
+    }));
+    start_request_result(&mut env, callback, request)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cash_pyx_app_nativeapi_NativeBindings_lnaddrReleaseAsync<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    factory: jlong,
+    domain: JString<'local>,
+    username: JString<'local>,
+    callback: JObject<'local>,
+) -> jlong {
+    let request = catch_unwind(AssertUnwindSafe(|| {
+        Ok(async_requests::SnapshotRequest::LnaddrRelease(
+            checked_handle(factory)?,
+            owned_payment_input(&mut env, &domain)?,
+            owned_payment_input(&mut env, &username)?,
+        ))
+    }));
+    start_request_result(&mut env, callback, request)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cash_pyx_app_nativeapi_NativeBindings_lnaddrRepointAsync<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    client: jlong,
+    domain: JString<'local>,
+    username: JString<'local>,
+    callback: JObject<'local>,
+) -> jlong {
+    let request = catch_unwind(AssertUnwindSafe(|| {
+        Ok(async_requests::SnapshotRequest::LnaddrRepoint(
+            checked_handle(client)?,
+            owned_payment_input(&mut env, &domain)?,
+            owned_payment_input(&mut env, &username)?,
+        ))
+    }));
+    start_request_result(&mut env, callback, request)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cash_pyx_app_nativeapi_NativeBindings_lnaddrRecoverAsync<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    factory_handle: jlong,
+    callback: JObject<'local>,
+) -> jlong {
+    start_async_request(
+        &mut env,
+        callback,
+        async_requests::SnapshotRequest::LnaddrRecover,
+        factory_handle,
+    )
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_cash_pyx_app_nativeapi_NativeBindings_satsToFiat<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,

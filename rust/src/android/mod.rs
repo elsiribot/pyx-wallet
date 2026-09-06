@@ -14,6 +14,7 @@ pub(crate) mod error;
 pub(crate) mod fiat;
 pub(crate) mod handles;
 pub(crate) mod input;
+pub(crate) mod lnaddr_requests;
 pub(crate) mod lnurl_pay;
 pub(crate) mod logging;
 pub(crate) mod metadata;

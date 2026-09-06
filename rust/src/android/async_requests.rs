@@ -10,8 +10,8 @@ use zeroize::{Zeroize, Zeroizing};
 use super::error::{AndroidError, AndroidErrorCode};
 use super::handles::{HandleKind, global_close, global_get, global_handles, global_insert};
 use super::{
-    activity, bootstrap, catalog, fiat, input, lnurl_pay, metadata, quotes, reconciliation,
-    recovery, runtime, transfers, wallet,
+    activity, bootstrap, catalog, fiat, input, lnaddr_requests, lnurl_pay, metadata, quotes,
+    reconciliation, recovery, runtime, transfers, wallet,
 };
 
 const PENDING: u8 = 0;
@@ -101,6 +101,14 @@ pub(crate) enum SnapshotRequest {
     SeedWords(u64),
     ReceiveLnurl(u64),
     PrepareLnurl(String),
+    LnaddrSnapshot(u64),
+    LnaddrDiscover(u64),
+    LnaddrQuote(u64, String, String, String),
+    LnaddrClaim(u64, String, String, String),
+    LnaddrSetPrimary(u64, String, String),
+    LnaddrRelease(u64, String, String),
+    LnaddrRepoint(u64, String, String),
+    LnaddrRecover(u64),
     ShutdownAndroidSession,
 }
 
@@ -318,6 +326,44 @@ pub(crate) fn start(
                         .await
                         .map(RequestOutput::parsed)
                 }
+                SnapshotRequest::LnaddrSnapshot(factory) => {
+                    lnaddr_requests::snapshot_async(factory)
+                        .await
+                        .map(RequestOutput::plain)
+                }
+                SnapshotRequest::LnaddrDiscover(factory) => {
+                    lnaddr_requests::discover_async(factory)
+                        .await
+                        .map(RequestOutput::plain)
+                }
+                SnapshotRequest::LnaddrQuote(factory, origin, domain, username) => {
+                    lnaddr_requests::quote_async(factory, origin, domain, username)
+                        .await
+                        .map(RequestOutput::plain)
+                }
+                SnapshotRequest::LnaddrClaim(client, origin, domain, username) => {
+                    lnaddr_requests::claim_async(client, origin, domain, username)
+                        .await
+                        .map(RequestOutput::plain)
+                }
+                SnapshotRequest::LnaddrSetPrimary(factory, domain, username) => {
+                    lnaddr_requests::set_primary_async(factory, domain, username)
+                        .await
+                        .map(RequestOutput::plain)
+                }
+                SnapshotRequest::LnaddrRelease(factory, domain, username) => {
+                    lnaddr_requests::release_async(factory, domain, username)
+                        .await
+                        .map(RequestOutput::plain)
+                }
+                SnapshotRequest::LnaddrRepoint(client, domain, username) => {
+                    lnaddr_requests::repoint_async(client, domain, username)
+                        .await
+                        .map(RequestOutput::plain)
+                }
+                SnapshotRequest::LnaddrRecover(factory) => lnaddr_requests::recover_async(factory)
+                    .await
+                    .map(RequestOutput::plain),
                 SnapshotRequest::ShutdownAndroidSession => {
                     super::session::shutdown(Some(request_id))
                         .await
