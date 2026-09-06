@@ -52,10 +52,8 @@ fn prepare_log_dir(files_dir: &str) -> Option<std::path::PathBuf> {
 fn try_init(files_dir: &str) -> Option<WorkerGuard> {
     let log_dir = prepare_log_dir(files_dir)?;
 
-    let (writer, guard) = tracing_appender::non_blocking(tracing_appender::rolling::daily(
-        &log_dir,
-        LOG_FILE_PREFIX,
-    ));
+    let (writer, guard) =
+        tracing_appender::non_blocking(tracing_appender::rolling::daily(&log_dir, LOG_FILE_PREFIX));
     let file_layer = tracing_subscriber::fmt::layer()
         .with_writer(writer)
         .with_ansi(false);
