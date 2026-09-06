@@ -5,6 +5,7 @@
 //! lnaddrd server) and UI are added by later tasks.
 
 mod api;
+mod discovery;
 mod identity;
 mod nip98;
 mod store;
@@ -13,6 +14,8 @@ mod store;
 pub(crate) use api::{
     HttpTransport, LnaddrApi, OwnedAddress, QuoteResult, RegisterOk, ReqwestTransport,
 };
+#[allow(unused_imports)] // Consumed once Task 6+ wires discovery into the service layer.
+pub(crate) use discovery::{DEFAULT_RELAYS, DEFAULT_SERVER, DiscoveredServer, discover};
 #[allow(unused_imports)] // Consumed once Task 5+ wire in NIP-98 auth events.
 pub(crate) use identity::{nostr_keypair, nostr_pubkey_hex};
 #[allow(unused_imports)] // Consumed once Task 5+ wires in the lnaddrd HTTP client.

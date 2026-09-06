@@ -18,6 +18,24 @@ use sha2::{Digest, Sha256};
 /// NIP-98 HTTP Auth event kind.
 const KIND_HTTP_AUTH: u64 = 27235;
 
+/// Computes a Nostr event id (NIP-01): the SHA-256 of the canonical
+/// serialization `[0, pubkey, created_at, kind, tags, content]`. Shared by
+/// event construction (here) and by announcement verification
+/// (`discovery::parse_announcement`), so there is exactly one implementation
+/// of the wire rule.
+pub(crate) fn nostr_event_id(
+    pubkey_hex: &str,
+    created_at_secs: &u64,
+    kind: u64,
+    tags: &[Value],
+    content: &str,
+) -> [u8; 32] {
+    let preimage = (0u8, pubkey_hex, created_at_secs, kind, tags, content);
+    let preimage_json =
+        serde_json::to_string(&preimage).expect("tuple of primitives always serializes");
+    Sha256::digest(preimage_json.as_bytes()).into()
+}
+
 /// Builds, signs, and base64-encodes a NIP-98 HTTP Auth event, returning the
 /// value for the `Authorization` header: `"Nostr <base64(event-json)>"`.
 ///
@@ -42,12 +60,7 @@ pub(crate) fn nip98_header(
     let content = "";
     let kind = KIND_HTTP_AUTH;
 
-    // NIP-01 canonical serialization of `[0, pubkey, created_at, kind, tags,
-    // content]`, used only as the id preimage (never sent on the wire).
-    let preimage = (0u8, &pubkey_hex, created_at_secs, kind, &tags, content);
-    let preimage_json =
-        serde_json::to_string(&preimage).expect("tuple of primitives always serializes");
-    let id: [u8; 32] = Sha256::digest(preimage_json.as_bytes()).into();
+    let id = nostr_event_id(&pubkey_hex, &created_at_secs, kind, &tags, content);
     let id_hex = fedimint_core::hex::encode(id);
 
     let secp = Secp256k1::new();
