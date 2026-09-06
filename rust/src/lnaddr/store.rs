@@ -77,25 +77,52 @@ impl LnAddressStore {
     /// other record with the same `federation_id`. If it's the federation's
     /// first record, forces `is_primary = true`. Unassigned records
     /// (`federation_id: None`) are always forced to `is_primary = false`.
+    ///
+    /// Invariant: after this call returns, every federation with at least one
+    /// record has exactly one primary. Two things follow from that: a
+    /// re-upsert of an existing primary record that doesn't request
+    /// `is_primary` preserves its primary status instead of vacating the
+    /// seat, and if the record moved out of (or dropped) a federation it
+    /// used to be primary for, the oldest remaining record of that old
+    /// federation is promoted.
     pub async fn upsert(&self, mut record: LnAddressRecord) {
         let key = LnAddressKey(record.domain.clone(), record.username.clone());
         let mut dbtx = self.db.begin_transaction().await;
+
+        let existing = dbtx.get_value(&key).await;
+        let was_primary_in_same_federation = existing
+            .as_ref()
+            .is_some_and(|old| old.is_primary && old.federation_id == record.federation_id);
 
         match record.federation_id {
             Some(federation_id) => {
                 let others = other_records_for_federation(&mut dbtx, &key, federation_id).await;
 
                 if others.is_empty() {
-                    // First record claimed for this federation is always primary.
+                    // Only record claimed for this federation is always primary.
                     record.is_primary = true;
                 } else if record.is_primary {
                     demote_primaries(&mut dbtx, others).await;
+                } else if was_primary_in_same_federation {
+                    // Don't silently vacate the primary seat just because a
+                    // re-upsert (e.g. a destination refresh) didn't ask for it.
+                    record.is_primary = true;
                 }
             }
             None => record.is_primary = false,
         }
 
         dbtx.insert_entry(&key, &record).await;
+
+        // Safety net: if the record moved away from (or dropped out of) a
+        // federation it used to be primary for, that federation may now have
+        // records but no primary. Promote its oldest remaining record.
+        if let Some(old_federation_id) = existing.and_then(|old| old.federation_id) {
+            if Some(old_federation_id) != record.federation_id {
+                ensure_primary_exists(&mut dbtx, old_federation_id).await;
+            }
+        }
+
         dbtx.commit_tx().await;
     }
 
@@ -139,21 +166,7 @@ impl LnAddressStore {
 
         if removed.is_primary {
             if let Some(federation_id) = removed.federation_id {
-                let mut remaining: Vec<(LnAddressKey, LnAddressRecord)> = dbtx
-                    .find_by_prefix(&LnAddressPrefix)
-                    .await
-                    .collect::<Vec<_>>()
-                    .await
-                    .into_iter()
-                    .filter(|(_, record)| record.federation_id == Some(federation_id))
-                    .collect();
-
-                remaining.sort_by_key(|(_, record)| record.claimed_at_secs);
-
-                if let Some((oldest_key, mut oldest_record)) = remaining.into_iter().next() {
-                    oldest_record.is_primary = true;
-                    dbtx.insert_entry(&oldest_key, &oldest_record).await;
-                }
+                ensure_primary_exists(&mut dbtx, federation_id).await;
             }
         }
 
@@ -196,6 +209,34 @@ async fn demote_primaries<Cap: Send>(
             record.is_primary = false;
             dbtx.insert_entry(&key, &record).await;
         }
+    }
+}
+
+/// If `federation_id` has at least one record but none of them are primary,
+/// promotes the oldest (`claimed_at_secs`) one. No-op if it already has a
+/// primary or has no records at all.
+async fn ensure_primary_exists<Cap: Send>(
+    dbtx: &mut fedimint_core::db::DatabaseTransaction<'_, Cap>,
+    federation_id: FederationId,
+) {
+    let mut records: Vec<(LnAddressKey, LnAddressRecord)> = dbtx
+        .find_by_prefix(&LnAddressPrefix)
+        .await
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .filter(|(_, record)| record.federation_id == Some(federation_id))
+        .collect();
+
+    if records.iter().any(|(_, record)| record.is_primary) {
+        return;
+    }
+
+    records.sort_by_key(|(_, record)| record.claimed_at_secs);
+
+    if let Some((oldest_key, mut oldest_record)) = records.into_iter().next() {
+        oldest_record.is_primary = true;
+        dbtx.insert_entry(&oldest_key, &oldest_record).await;
     }
 }
 
@@ -284,6 +325,56 @@ mod tests {
         let result = store.set_primary("example.com", "ghost").await;
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn set_primary_on_unassigned_record_errors() {
+        let store = test_store();
+
+        store
+            .upsert(record("example.com", "alice", None, false, 100))
+            .await;
+
+        let result = store.set_primary("example.com", "alice").await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn reupsert_without_primary_flag_preserves_existing_primary() {
+        let store = test_store();
+        let fed = FederationId::dummy();
+
+        // A is the federation's first record, forced primary.
+        store
+            .upsert(record("example.com", "alice", Some(fed), false, 100))
+            .await;
+        // B joins, not primary.
+        store
+            .upsert(record("example.com", "bob", Some(fed), false, 200))
+            .await;
+        assert!(store.get("example.com", "alice").await.unwrap().is_primary);
+
+        // Re-upsert A with is_primary: false and a changed destination, e.g.
+        // a routine destination refresh that doesn't know or care it's
+        // touching the primary record.
+        let mut refreshed_alice = record("example.com", "alice", Some(fed), false, 100);
+        refreshed_alice.destination = "LNURL1CHANGED".to_string();
+        store.upsert(refreshed_alice).await;
+
+        let alice = store.get("example.com", "alice").await.unwrap();
+        assert!(
+            alice.is_primary,
+            "re-upsert must not vacate the primary seat"
+        );
+        assert_eq!(alice.destination, "LNURL1CHANGED");
+        assert!(!store.get("example.com", "bob").await.unwrap().is_primary);
+
+        let primary = store.primary_for(&fed).await;
+        assert_eq!(
+            primary.map(|record| record.username),
+            Some("alice".to_string())
+        );
     }
 
     #[tokio::test]
