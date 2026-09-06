@@ -48,6 +48,14 @@ internal object NativeBindings {
     external fun restoreWalletAsync(databaseHandle: Long, wordsJson: String, callback: NativeRequestCallback): Long
     external fun seedWordsAsync(factoryHandle: Long, callback: NativeRequestCallback): Long
     external fun receiveLnurlAsync(clientHandle: Long, callback: NativeRequestCallback): Long
+    external fun lnaddrSnapshotAsync(factoryHandle: Long, callback: NativeRequestCallback): Long
+    external fun lnaddrDiscoverAsync(factoryHandle: Long, callback: NativeRequestCallback): Long
+    external fun lnaddrQuoteAsync(factoryHandle: Long, origin: String, domain: String, username: String, callback: NativeRequestCallback): Long
+    external fun lnaddrClaimAsync(clientHandle: Long, origin: String, domain: String, username: String, callback: NativeRequestCallback): Long
+    external fun lnaddrSetPrimaryAsync(factoryHandle: Long, domain: String, username: String, callback: NativeRequestCallback): Long
+    external fun lnaddrReleaseAsync(factoryHandle: Long, domain: String, username: String, callback: NativeRequestCallback): Long
+    external fun lnaddrRepointAsync(clientHandle: Long, domain: String, username: String, callback: NativeRequestCallback): Long
+    external fun lnaddrRecoverAsync(factoryHandle: Long, callback: NativeRequestCallback): Long
     external fun shutdownAndroidSession(callback: NativeRequestCallback): Long
     external fun subscribeBalance(clientHandle: Long, callback: NativeSubscriptionCallback): Long
     external fun subscribeConnection(clientHandle: Long, callback: NativeSubscriptionCallback): Long

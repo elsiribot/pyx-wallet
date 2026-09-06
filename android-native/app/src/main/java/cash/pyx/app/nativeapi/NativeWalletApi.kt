@@ -58,6 +58,14 @@ interface NativeWalletApi {
     suspend fun restoreWalletAsync(databaseHandle: Long, words: List<String>): NativeResult<RestoredWallet> = unavailable()
     suspend fun seedWordsAsync(factoryHandle: Long): NativeResult<SeedWords> = unavailable()
     suspend fun receiveLnurlAsync(clientHandle: Long): NativeResult<LnurlReceive> = unavailable()
+    suspend fun lnaddrSnapshotAsync(factoryHandle: Long): NativeResult<LnAddressSnapshot> = unavailable()
+    suspend fun lnaddrDiscoverAsync(factoryHandle: Long): NativeResult<LnaddrDiscovery> = unavailable()
+    suspend fun lnaddrQuoteAsync(factoryHandle: Long, origin: String, domain: String, username: String): NativeResult<LnaddrQuote> = unavailable()
+    suspend fun lnaddrClaimAsync(clientHandle: Long, origin: String, domain: String, username: String): NativeResult<LnAddress> = unavailable()
+    suspend fun lnaddrSetPrimaryAsync(factoryHandle: Long, domain: String, username: String): NativeResult<LnaddrMutation> = unavailable()
+    suspend fun lnaddrReleaseAsync(factoryHandle: Long, domain: String, username: String): NativeResult<LnaddrMutation> = unavailable()
+    suspend fun lnaddrRepointAsync(clientHandle: Long, domain: String, username: String): NativeResult<LnaddrMutation> = unavailable()
+    suspend fun lnaddrRecoverAsync(factoryHandle: Long): NativeResult<LnaddrRecovery> = unavailable()
     suspend fun shutdownAndroidSession(): NativeResult<AndroidSessionShutdown> =
         NativeResult.Failure(AndroidError("native_api_unavailable", "Wallet shutdown is unavailable.", false))
     fun parseBitcoinPayment(payload: String): NativeResult<BitcoinPayment> =
@@ -112,6 +120,14 @@ class JniNativeWalletApi internal constructor(
     private val restoreAsyncBinding: (Long, String, NativeRequestCallback) -> Long = NativeBindings::restoreWalletAsync,
     private val seedWordsAsyncBinding: (Long, NativeRequestCallback) -> Long = NativeBindings::seedWordsAsync,
     private val receiveLnurlAsyncBinding: (Long, NativeRequestCallback) -> Long = NativeBindings::receiveLnurlAsync,
+    private val lnaddrSnapshotAsyncBinding: (Long, NativeRequestCallback) -> Long = NativeBindings::lnaddrSnapshotAsync,
+    private val lnaddrDiscoverAsyncBinding: (Long, NativeRequestCallback) -> Long = NativeBindings::lnaddrDiscoverAsync,
+    private val lnaddrQuoteAsyncBinding: (Long, String, String, String, NativeRequestCallback) -> Long = NativeBindings::lnaddrQuoteAsync,
+    private val lnaddrClaimAsyncBinding: (Long, String, String, String, NativeRequestCallback) -> Long = NativeBindings::lnaddrClaimAsync,
+    private val lnaddrSetPrimaryAsyncBinding: (Long, String, String, NativeRequestCallback) -> Long = NativeBindings::lnaddrSetPrimaryAsync,
+    private val lnaddrReleaseAsyncBinding: (Long, String, String, NativeRequestCallback) -> Long = NativeBindings::lnaddrReleaseAsync,
+    private val lnaddrRepointAsyncBinding: (Long, String, String, NativeRequestCallback) -> Long = NativeBindings::lnaddrRepointAsync,
+    private val lnaddrRecoverAsyncBinding: (Long, NativeRequestCallback) -> Long = NativeBindings::lnaddrRecoverAsync,
     private val shutdownAndroidSessionBinding: (NativeRequestCallback) -> Long = NativeBindings::shutdownAndroidSession,
     private val parseBitcoinBinding: (String) -> String = NativeBindings::parseBitcoinPayment,
 ) : NativeWalletApi {
@@ -432,6 +448,96 @@ class JniNativeWalletApi internal constructor(
             if (value.requiredString("type") != "lnurl") throw JSONException("type")
             LnurlReceive(value.requiredPayload("payload"))
         }
+
+    override suspend fun lnaddrSnapshotAsync(factoryHandle: Long): NativeResult<LnAddressSnapshot> =
+        awaitNative({ lnaddrSnapshotAsyncBinding(factoryHandle, it) }, ::parseLnAddressSnapshot)
+    override suspend fun lnaddrDiscoverAsync(factoryHandle: Long): NativeResult<LnaddrDiscovery> =
+        awaitNative({ lnaddrDiscoverAsyncBinding(factoryHandle, it) }, ::parseLnaddrDiscovery)
+    override suspend fun lnaddrQuoteAsync(factoryHandle: Long, origin: String, domain: String, username: String): NativeResult<LnaddrQuote> =
+        awaitNative({ lnaddrQuoteAsyncBinding(factoryHandle, origin, domain, username, it) }, ::parseLnaddrQuote)
+    override suspend fun lnaddrClaimAsync(clientHandle: Long, origin: String, domain: String, username: String): NativeResult<LnAddress> =
+        awaitNative({ lnaddrClaimAsyncBinding(clientHandle, origin, domain, username, it) }) { boundedObject(it).toLnAddress() }
+    override suspend fun lnaddrSetPrimaryAsync(factoryHandle: Long, domain: String, username: String): NativeResult<LnaddrMutation> =
+        awaitNative({ lnaddrSetPrimaryAsyncBinding(factoryHandle, domain, username, it) }, ::parseLnaddrMutation)
+    override suspend fun lnaddrReleaseAsync(factoryHandle: Long, domain: String, username: String): NativeResult<LnaddrMutation> =
+        awaitNative({ lnaddrReleaseAsyncBinding(factoryHandle, domain, username, it) }, ::parseLnaddrMutation)
+    override suspend fun lnaddrRepointAsync(clientHandle: Long, domain: String, username: String): NativeResult<LnaddrMutation> =
+        awaitNative({ lnaddrRepointAsyncBinding(clientHandle, domain, username, it) }, ::parseLnaddrMutation)
+    override suspend fun lnaddrRecoverAsync(factoryHandle: Long): NativeResult<LnaddrRecovery> =
+        awaitNative({ lnaddrRecoverAsyncBinding(factoryHandle, it) }, ::parseLnaddrRecovery)
+
+    private fun JSONObject.toLnAddress(): LnAddress {
+        if (keys().asSequence().toSet() != LNADDRESS_FIELDS) throw JSONException("address fields")
+        return LnAddress(
+            domain = requiredLnaddrField("domain"),
+            username = requiredLnaddrField("username"),
+            serverOrigin = requiredPayload("serverOrigin"),
+            federationId = optionalPayload("federationId"),
+            destination = requiredPayload("destination"),
+            isPrimary = get("isPrimary") as? Boolean ?: throw JSONException("isPrimary"),
+            claimedAtSecs = requiredNonNegativeLong("claimedAtSecs"),
+        )
+    }
+
+    private fun JSONObject.requiredLnaddrField(key: String): String = requiredString(key).also {
+        if (it.length > MAX_LNADDR_FIELD_CHARS) throw JSONException(key)
+    }
+
+    private fun parseLnAddressSnapshot(json: String): LnAddressSnapshot {
+        val values = boundedObject(json).getJSONArray("addresses")
+        if (values.length() > MAX_LNADDRESSES) throw JSONException("addresses")
+        return LnAddressSnapshot((0 until values.length()).map { values.getJSONObject(it).toLnAddress() })
+    }
+
+    private fun JSONObject.toLnaddrServer(): LnaddrServer {
+        if (keys().asSequence().toSet() != setOf("domains", "freeDomains", "name", "origin")) throw JSONException("server fields")
+        fun domainList(key: String): List<String> {
+            val array = getJSONArray(key)
+            if (array.length() > MAX_LNADDR_DOMAINS_PER_SERVER) throw JSONException(key)
+            return (0 until array.length()).map { index ->
+                array.getString(index).also { if (it.isEmpty() || it.length > MAX_LNADDR_FIELD_CHARS) throw JSONException(key) }
+            }
+        }
+        return LnaddrServer(requiredPayload("origin"), requiredString("name"), domainList("domains"), domainList("freeDomains"))
+    }
+
+    private fun parseLnaddrDiscovery(json: String): LnaddrDiscovery {
+        val values = boundedObject(json).getJSONArray("servers")
+        if (values.length() > MAX_LNADDR_SERVERS) throw JSONException("servers")
+        return LnaddrDiscovery((0 until values.length()).map { values.getJSONObject(it).toLnaddrServer() })
+    }
+
+    private fun parseLnaddrQuote(json: String): LnaddrQuote {
+        val value = boundedObject(json)
+        if (!value.has("priceMsat") || !value.has("state") || !LNADDR_QUOTE_FIELDS.containsAll(value.keys().asSequence().toSet()))
+            throw JSONException("quote fields")
+        val priceMsat = if (value.isNull("priceMsat")) null else value.requiredPositiveLong("priceMsat")
+        fun withoutPrice(quote: LnaddrQuote): LnaddrQuote {
+            if (priceMsat != null) throw JSONException("quote")
+            return quote
+        }
+        return when (value.requiredString("state")) {
+            "free" -> withoutPrice(LnaddrQuote.Free)
+            "paid" -> LnaddrQuote.Paid(priceMsat ?: throw JSONException("quote"))
+            "taken" -> withoutPrice(LnaddrQuote.Taken)
+            "reserved" -> withoutPrice(LnaddrQuote.Reserved)
+            "invalid" -> withoutPrice(LnaddrQuote.Invalid(value.optionalPayload("reason") ?: ""))
+            "rate_limited" -> withoutPrice(LnaddrQuote.RateLimited)
+            else -> throw JSONException("state")
+        }
+    }
+
+    private fun parseLnaddrMutation(json: String): LnaddrMutation {
+        val value = boundedObject(json)
+        if (value.keys().asSequence().toSet() != setOf("ok")) throw JSONException("mutation fields")
+        return LnaddrMutation(value.get("ok") as? Boolean ?: throw JSONException("ok"))
+    }
+
+    private fun parseLnaddrRecovery(json: String): LnaddrRecovery {
+        val value = boundedObject(json)
+        if (value.keys().asSequence().toSet() != setOf("recovered")) throw JSONException("recovery fields")
+        return LnaddrRecovery(value.requiredNonNegativeLong("recovered"))
+    }
 
     private fun parseFederationDetails(json: String): FederationDetails {
         val value = boundedObject(json)
@@ -810,5 +916,11 @@ class JniNativeWalletApi internal constructor(
         const val MAX_GUARDIANS = 128
         const val MAX_CURRENCIES = 256
         const val MAX_ADDRESSES = 4096
+        const val MAX_LNADDRESSES = 64
+        const val MAX_LNADDR_SERVERS = 32
+        const val MAX_LNADDR_DOMAINS_PER_SERVER = 32
+        const val MAX_LNADDR_FIELD_CHARS = 64
+        val LNADDRESS_FIELDS = setOf("claimedAtSecs", "destination", "domain", "federationId", "isPrimary", "serverOrigin", "username")
+        val LNADDR_QUOTE_FIELDS = setOf("priceMsat", "state", "reason")
     }
 }

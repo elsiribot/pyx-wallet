@@ -193,3 +193,16 @@ data class FiatCurrency(val code: String, val name: String, val symbol: String, 
 data class FiatDisplay(val amountDecimal: String, val currencyCode: String, val currencyName: String, val currencySymbol: String, val decimalDigits: Int)
 data class FiatToSats(val amountSat: Long, val currencyCode: String)
 data class BitcoinPayment(val address: String, val amountSat: Long?, val label: String?, val message: String?, val isUri: Boolean)
+
+data class LnAddress(val domain: String, val username: String, val serverOrigin: String,
+    val federationId: String?, val destination: String, val isPrimary: Boolean, val claimedAtSecs: Long) {
+    val display: String get() = "$username@$domain"
+}
+data class LnAddressSnapshot(val addresses: List<LnAddress>)
+data class LnaddrServer(val origin: String, val name: String, val domains: List<String>, val freeDomains: List<String>)
+data class LnaddrDiscovery(val servers: List<LnaddrServer>)
+sealed interface LnaddrQuote { data object Free : LnaddrQuote; data class Paid(val priceMsat: Long) : LnaddrQuote
+    data object Taken : LnaddrQuote; data object Reserved : LnaddrQuote
+    data class Invalid(val reason: String) : LnaddrQuote; data object RateLimited : LnaddrQuote }
+data class LnaddrMutation(val ok: Boolean)
+data class LnaddrRecovery(val recovered: Long)
