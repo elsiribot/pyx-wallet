@@ -9,6 +9,7 @@ mod factory;
 mod fountain;
 #[cfg(feature = "flutter-bridge")]
 mod frb_generated;
+mod lnaddr;
 mod lnurl;
 
 use std::path::PathBuf;

@@ -22,6 +22,9 @@ pub(crate) enum DbKeyPrefix {
     /// Native Android irreversible-operation journal. Append-only prefix: old
     /// wallets must keep decoding every prefix above unchanged.
     PendingOperation = 0x09,
+    /// Claimed Lightning addresses (lnaddrd). Append-only prefix: old wallets
+    /// must keep decoding every prefix above unchanged.
+    LnAddress = 0x0A,
 }
 
 #[derive(Clone, Debug, Encodable, Decodable)]
