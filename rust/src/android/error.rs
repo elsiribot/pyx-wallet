@@ -71,6 +71,21 @@ impl AndroidError {
         )
     }
 
+    /// Coarse but truthful mapping for Lightning failures: gateway
+    /// availability is the one common, actionable cause worth naming. The
+    /// message stays static — no bridge input or upstream detail crosses JNI.
+    pub(crate) fn from_lightning(error: &str) -> Self {
+        if error.to_ascii_lowercase().contains("gateway") {
+            Self::new(
+                AndroidErrorCode::Internal,
+                "No Lightning gateway is available for this federation right now. Try again later.",
+                true,
+            )
+        } else {
+            Self::internal()
+        }
+    }
+
     /// Convert a caught panic without formatting its payload. Panic strings can
     /// accidentally contain sensitive inputs and must not cross JNI.
     pub(crate) fn from_panic(_: Box<dyn Any + Send>) -> Self {
@@ -100,6 +115,20 @@ mod tests {
         assert_eq!(error.code, AndroidErrorCode::Internal);
         assert!(!error.to_string().contains(secret));
         assert!(!error.retryable);
+    }
+
+    #[test]
+    fn lightning_mapping_names_gateway_unavailability_and_stays_static() {
+        let gateway = AndroidError::from_lightning("No gateways are available");
+        assert!(gateway.user_message.contains("gateway"));
+        assert!(gateway.retryable);
+        // Upstream detail must never leak through, only the static message.
+        let secret = AndroidError::from_lightning("gateway secret-detail xyz");
+        assert!(!secret.user_message.contains("secret-detail"));
+        assert_eq!(
+            AndroidError::from_lightning("something else entirely"),
+            AndroidError::internal()
+        );
     }
 
     #[test]

@@ -69,7 +69,7 @@ pub(crate) async fn receive_lightning_async(
     let receive = client
         .ln_receive(amount_sat)
         .await
-        .map_err(|_| AndroidError::internal())?;
+        .map_err(|e| AndroidError::from_lightning(&e))?;
     let expires_at_epoch_seconds = invoice_expiry_epoch_seconds(&receive.invoice)?;
     serialize(&LightningReceiveDto {
         receive_type: "lightning",

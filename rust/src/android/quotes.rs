@@ -125,7 +125,7 @@ pub(crate) async fn prepare_resolved_lightning_async_with_handle(
     let fees = client
         .ln_calculate_fees(&invoice)
         .await
-        .map_err(|_| AndroidError::internal())?;
+        .map_err(|e| AndroidError::from_lightning(&e))?;
     let fee_sat = fees.fee_sats;
     let gateway_url = fees.gateway_url;
     let direct = fees.is_direct;
@@ -176,7 +176,7 @@ pub(crate) async fn execute_lightning_async(
         .await;
     quote.consume()?;
     let _ = global_close(quote_handle, HandleKind::Quote);
-    let operation_id = result.map_err(|_| AndroidError::internal())?;
+    let operation_id = result.map_err(|e| AndroidError::from_lightning(&e))?;
     reconciliation::attach_operation(&client, &correlation_id, operation_id).await?;
     serialize(&ExecutedLightningDto {
         correlation_id,

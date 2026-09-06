@@ -89,7 +89,10 @@ pub(crate) fn parse_bitcoin_payment(payload: &str) -> Result<String, AndroidErro
 
 pub(crate) async fn receive_lnurl_async(client_handle: u64) -> Result<String, AndroidError> {
     let client = global_get::<ConduitClient>(client_handle, HandleKind::Client)?;
-    let payload = client.lnurl().await.map_err(|_| AndroidError::internal())?;
+    let payload = client
+        .lnurl()
+        .await
+        .map_err(|e| AndroidError::from_lightning(&e))?;
     if payload.is_empty() || payload.len() > MAX_INPUT_BYTES {
         return Err(AndroidError::internal());
     }

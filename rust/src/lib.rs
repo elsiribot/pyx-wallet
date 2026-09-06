@@ -85,6 +85,12 @@ pub struct InviteCodeWrapper(pub(crate) InviteCode);
 
 #[cfg_attr(feature = "flutter-bridge", frb(sync))]
 pub fn parse_invite_code(invite: &str) -> Option<InviteCodeWrapper> {
+    // Deep links deliver invites with their URI scheme attached, like the
+    // ecash and bolt11 parsers already handle for their prefixes.
+    if let Some(stripped) = invite.strip_prefix("fedimint:") {
+        return parse_invite_code(stripped);
+    }
+
     InviteCode::from_str(invite).ok().map(InviteCodeWrapper)
 }
 

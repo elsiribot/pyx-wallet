@@ -519,35 +519,42 @@ impl ConduitClient {
     pub async fn ln_receive(&self, amount_sat: i64) -> Result<LnReceiveInvoice, String> {
         let amount = Amount::from_sats(amount_sat as u64);
 
+        // LNv2 preferred, but many federations ship the lnv2 module with only
+        // LNv1 gateways registered — when LNv2 cannot provide a gateway, fall
+        // back to LNv1 instead of failing the receive outright.
         if let Ok(module) = self.client.get_first_module::<LightningClientModule>() {
-            let (gateway, routing_info) = module
-                .select_gateway(None)
-                .await
-                .map_err(|e| e.to_string())?;
+            match module.select_gateway(None).await {
+                Ok((gateway, routing_info)) => {
+                    let fee_sats = routing_info
+                        .receive_fee
+                        .fee(amount.msats)
+                        .msats
+                        .div_ceil(1000) as i64;
 
-            let fee_sats = routing_info
-                .receive_fee
-                .fee(amount.msats)
-                .msats
-                .div_ceil(1000) as i64;
+                    let invoice = module
+                        .receive(
+                            amount,
+                            60 * 60 * 24,
+                            Bolt11InvoiceDescription::Direct(String::new()),
+                            Some(gateway.clone()),
+                            ().into(),
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .0;
 
-            let invoice = module
-                .receive(
-                    amount,
-                    60 * 60 * 24,
-                    Bolt11InvoiceDescription::Direct(String::new()),
-                    Some(gateway.clone()),
-                    ().into(),
-                )
-                .await
-                .map_err(|e| e.to_string())?
-                .0;
-
-            return Ok(LnReceiveInvoice {
-                invoice: invoice.to_string(),
-                gateway_url: gateway.to_string(),
-                fee_sats,
-            });
+                    return Ok(LnReceiveInvoice {
+                        invoice: invoice.to_string(),
+                        gateway_url: gateway.to_string(),
+                        fee_sats,
+                    });
+                }
+                Err(gateway_error) => {
+                    if self.client.get_first_module::<LnV1ClientModule>().is_err() {
+                        return Err(gateway_error.to_string());
+                    }
+                }
+            }
         }
 
         // LNv1: the gateway funds the incoming contract for the full invoice
@@ -597,24 +604,30 @@ impl ConduitClient {
             .ok_or("Invoice has no amount")?;
 
         if let Ok(module) = self.client.get_first_module::<LightningClientModule>() {
-            let (gateway, routing_info) = module
-                .select_gateway(Some(invoice.0.clone()))
-                .await
-                .map_err(|e| e.to_string())?;
+            match module.select_gateway(Some(invoice.0.clone())).await {
+                Ok((gateway, routing_info)) => {
+                    let (send_fee, _) = routing_info.send_parameters(&invoice.0);
 
-            let (send_fee, _) = routing_info.send_parameters(&invoice.0);
+                    let fee_sats = send_fee.fee(amount_msats).msats.div_ceil(1000) as i64;
 
-            let fee_sats = send_fee.fee(amount_msats).msats.div_ceil(1000) as i64;
+                    // A direct swap settles between fedimints when the invoice's payee is
+                    // the gateway's own lightning node; otherwise it routes over lightning.
+                    let is_direct =
+                        invoice.0.recover_payee_pub_key() == routing_info.lightning_public_key;
 
-            // A direct swap settles between fedimints when the invoice's payee is
-            // the gateway's own lightning node; otherwise it routes over lightning.
-            let is_direct = invoice.0.recover_payee_pub_key() == routing_info.lightning_public_key;
-
-            return Ok(LnSendFees {
-                gateway_url: gateway.to_string(),
-                fee_sats,
-                is_direct,
-            });
+                    return Ok(LnSendFees {
+                        gateway_url: gateway.to_string(),
+                        fee_sats,
+                        is_direct,
+                    });
+                }
+                Err(gateway_error) => {
+                    // Fall back to LNv1 when LNv2 cannot provide a gateway.
+                    if self.client.get_first_module::<LnV1ClientModule>().is_err() {
+                        return Err(gateway_error.to_string());
+                    }
+                }
+            }
         }
 
         // LNv1: quote from the gateway's configured routing fees; payments to
@@ -664,15 +677,33 @@ impl ConduitClient {
         meta: serde_json::Value,
     ) -> Result<OperationId, String> {
         if let Ok(module) = self.client.get_first_module::<LightningClientModule>() {
-            let gateway = match gateway {
-                Some(url) => Some(SafeUrl::parse(&url).map_err(|e| e.to_string())?),
+            let lnv2_gateway = match &gateway {
+                Some(url) => Some(SafeUrl::parse(url).map_err(|e| e.to_string())?),
                 None => None,
             };
 
-            return module
-                .send(invoice.0.clone(), gateway, meta)
+            match module
+                .send(invoice.0.clone(), lnv2_gateway, meta.clone())
                 .await
-                .map_err(|e| e.to_string());
+            {
+                Ok(operation_id) => return Ok(operation_id),
+                // Only gateway-availability failures fall back to LNv1: they
+                // happen before any funds move. Everything else (payment in
+                // progress, already paid, funding failures) must surface as-is
+                // so a payment is never retried on another rail.
+                Err(
+                    error @ (fedimint_lnv2_client::SendPaymentError::SelectGateway(_)
+                    | fedimint_lnv2_client::SendPaymentError::FailedToConnectToGateway(_)
+                    | fedimint_lnv2_client::SendPaymentError::FederationNotSupported
+                    | fedimint_lnv2_client::SendPaymentError::GatewayFeeExceedsLimit
+                    | fedimint_lnv2_client::SendPaymentError::GatewayExpirationExceedsLimit),
+                ) => {
+                    if self.client.get_first_module::<LnV1ClientModule>().is_err() {
+                        return Err(error.to_string());
+                    }
+                }
+                Err(error) => return Err(error.to_string()),
+            }
         }
 
         // LNv1: resolve the quoted gateway by its API url (the identifier
@@ -712,10 +743,15 @@ impl ConduitClient {
             // recurringd serves any federation.
             let recurringd = SafeUrl::parse("https://lnurl.fedimint.org").unwrap();
 
-            return module
-                .generate_lnurl(recurringd, None)
-                .await
-                .map_err(|e| e.to_string());
+            match module.generate_lnurl(recurringd, None).await {
+                Ok(code) => return Ok(code),
+                Err(gateway_error) => {
+                    // Fall back to LNv1 when LNv2 cannot provide a gateway.
+                    if self.client.get_first_module::<LnV1ClientModule>().is_err() {
+                        return Err(gateway_error.to_string());
+                    }
+                }
+            }
         }
 
         // LNv1: recurring payment codes must be registered with a recurringd

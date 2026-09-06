@@ -335,7 +335,7 @@ fun PyxApp(
                     }
                     listOf(WalletRoute.JOIN, WalletRoute.RECOVER).forEach { route ->
                         composable(route.route) {
-                            JoinContent(state.factoryHandle, routedInput?.payload, route == WalletRoute.RECOVER, operation,
+                            JoinContent(state.factoryHandle, state.snapshot.federations.size, routedInput?.payload, route == WalletRoute.RECOVER, operation,
                                 { routedInput = null; navController.returnHome(); onClearInvite() }, onJoin, { navController.open(WalletRoute.SCAN) })
                         }
                     }
@@ -1689,6 +1689,7 @@ private fun paymentTypeLabel(type: cash.pyx.app.nativeapi.PaymentType): String =
 @Composable
 private fun JoinContent(
     factoryHandle: Long,
+    federationCount: Int,
     queuedInvite: String?,
     initialRecover: Boolean,
     operation: WalletOperation,
@@ -1700,6 +1701,11 @@ private fun JoinContent(
     var recover by remember { mutableStateOf(initialRecover) }
     var modalRoute by remember { mutableStateOf<WalletModalRoute?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    // A successful join grows the federation list; leave the form once it lands.
+    val initialFederationCount = remember { federationCount }
+    LaunchedEffect(federationCount) {
+        if (federationCount > initialFederationCount) back()
+    }
     Column(
         Modifier
             .fillMaxSize()
