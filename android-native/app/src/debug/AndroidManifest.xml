@@ -7,9 +7,14 @@
             android:name=".debug.ComponentGalleryActivity"
             android:exported="true"
             android:label="Pyx component gallery" />
+        <!-- Theme.Pyx rather than the application's Theme.Pyx.Starting: this activity never
+             installs the splash screen, so it would otherwise keep Theme.SplashScreen's light
+             action bar — a ~50dp band of non-app chrome across the top of every certified
+             screenshot, shrinking the very viewport the certification pins. -->
         <activity
             android:name=".debug.ScreenshotFixtureActivity"
             android:exported="true"
+            android:theme="@style/Theme.Pyx"
             android:label="Pyx synthetic screenshot fixture" />
         <!-- Debug-preview-only hook driven by the offline process-death certifier. -->
         <receiver

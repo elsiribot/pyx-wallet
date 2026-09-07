@@ -68,6 +68,9 @@ fun LnaddrClaimSheet(
     clientHandle: Long,
     factoryHandle: Long,
     onDismiss: () -> Unit,
+    /** Seeds the username field. Always empty in the app — the debug screenshot fixtures use it
+     * to reach the "typed name, availability checked" state without driving the soft keyboard. */
+    initialUsername: String = "",
 ) {
     val state by owner.state.collectAsStateWithLifecycle()
     val domainPairs = remember(state.servers) {
@@ -76,7 +79,7 @@ fun LnaddrClaimSheet(
     var selected by remember(domainPairs) {
         mutableStateOf(domainPairs.firstOrNull { (_, domain) -> domain == "pyx.cash" } ?: domainPairs.firstOrNull())
     }
-    var rawUsername by remember { mutableStateOf("") }
+    var rawUsername by remember { mutableStateOf(initialUsername) }
     val username = remember(rawUsername) { LnaddrClaimPresentation.sanitizeUsername(rawUsername) }
     var check by remember { mutableStateOf<ClaimCheck>(ClaimCheck.Idle) }
     var claiming by remember { mutableStateOf(false) }
@@ -128,11 +131,23 @@ fun LnaddrClaimSheet(
                     .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // The field is sized by a transparent copy of its own content (plus room for the
+                // caret) rather than by BasicTextField's ~100dp intrinsic minimum, so the muted
+                // "@domain" always sits directly against the name and the two read as one
+                // address instead of being separated by a gap the length of the field's minimum.
                 Box(Modifier.weight(1f, fill = false)) {
+                    Text(
+                        rawUsername.ifEmpty { "username" },
+                        style = PyxType.inputMono,
+                        color = Color.Transparent,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(end = 2.dp),
+                    )
                     BasicTextField(
                         value = rawUsername,
                         onValueChange = { rawUsername = it.take(64) },
-                        modifier = Modifier.testTag("lnaddr_username"),
+                        modifier = Modifier.matchParentSize().testTag("lnaddr_username"),
                         textStyle = PyxType.inputMono.copy(color = PyxText),
                         cursorBrush = SolidColor(PyxOrange),
                         singleLine = true,

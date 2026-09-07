@@ -80,11 +80,15 @@ printf 'Pyx synthetic Compose screenshot certification\npackage=%s\nproduction=%
 printf 'artifact\tfixture\tphysical_size\tdensity\tfont_scale\tanimation_scales\tsha256\tbytes\trequired_text\n' >"$OUT/hashes.tsv"
 
 capture() {
-  local artifact="$1" fixture="$2" marker="$3" hierarchy size density font animations
+  local artifact="$1" fixture="$2" marker="$3" settle="${4:-0}" hierarchy size density font animations
   local file="$OUT/$artifact.png"
   STAGE="capture $artifact"
   adb_device shell am force-stop "$PACKAGE" >/dev/null
   adb_device shell am start -W -n "$COMPONENT" --es fixture "$fixture" >/dev/null
+  # Some fixtures only reach their asserted state after work that outlives the first frame
+  # (bottom-sheet entry animation, the claim sheet's one-second availability debounce). The
+  # marker grep below still fails loudly if the settle was not long enough.
+  if [[ "$settle" != 0 ]]; then sleep "$settle"; fi
   hierarchy="$(adb_device exec-out uiautomator dump /dev/tty | tr -d '\r')"
   grep -Fq "$marker" <<<"$hierarchy" || { echo "missing structural marker for $artifact: $marker" >&2; exit 1; }
   adb_device exec-out screencap -p >"$file"
@@ -106,6 +110,10 @@ capture home_tx_sheet_f100 home_tx_sheet "Lightning received"
 capture send_receive_confirmation_f100 send_receive_confirmation "No payment will be submitted from this fixture"
 capture settings_access_seed_safe_f100 settings_access_seed_safe "No seed words are present in this fixture"
 capture error_offline_f100 error_offline "Could not reach federation guardians"
+capture receive_lnaddr_banner_f100 receive_lnaddr_banner "Claim your Lightning address" 2
+capture receive_lnaddr_claimed_f100 receive_lnaddr_claimed "@pyx.cash" 2
+capture lnaddr_claim_sheet_f100 lnaddr_claim_sheet "This name is available" 3
+capture lnaddr_settings_list_f100 lnaddr_settings_list "Unassigned" 2
 
 STAGE="390 by 844 dp at 130 percent font"
 adb_device shell settings put system font_scale 1.3 >/dev/null
@@ -115,6 +123,10 @@ capture home_tx_sheet_f130 home_tx_sheet "Lightning received"
 capture send_receive_confirmation_f130 send_receive_confirmation "No payment will be submitted from this fixture"
 capture settings_access_seed_safe_f130 settings_access_seed_safe "No seed words are present in this fixture"
 capture error_offline_f130 error_offline "Could not reach federation guardians"
+capture receive_lnaddr_banner_f130 receive_lnaddr_banner "Claim your Lightning address" 2
+capture receive_lnaddr_claimed_f130 receive_lnaddr_claimed "@pyx.cash" 2
+capture lnaddr_claim_sheet_f130 lnaddr_claim_sheet "This name is available" 3
+capture lnaddr_settings_list_f130 lnaddr_settings_list "Unassigned" 2
 
 STAGE="280 by 600 dp narrow viewport at 200 percent font"
 adb_device shell wm size 700x1500 >/dev/null; adb_device shell wm density 400 >/dev/null

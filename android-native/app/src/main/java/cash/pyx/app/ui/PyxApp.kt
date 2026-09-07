@@ -259,10 +259,98 @@ fun PyxApp(
     LaunchedEffect(paymentNotice?.identity) {
         paymentNotice?.let { snackbarHostState.showSnackbar(it.message, duration = SnackbarDuration.Short); onPaymentNoticeShown() }
     }
+    PyxAppChrome(
+        snackbarHost = { SnackbarHost(snackbarHostState, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) },
+    ) {
+        when (state) {
+            BootstrapState.Loading, BootstrapState.Creating, BootstrapState.Restoring,
+            BootstrapState.LoadingWallet -> LoadingContent(
+                when (state) {
+                    BootstrapState.Creating -> "Creating wallet…"
+                    BootstrapState.Restoring -> "Restoring wallet…"
+                    BootstrapState.LoadingWallet -> "Loading wallet…"
+                    else -> "Starting wallet…"
+                },
+            )
+            is BootstrapState.Onboarding -> key(sensitiveUiEpoch) {
+                OnboardingContent(state, onCreate, onRestore, seedValidation, seedSuggestions,
+                    onValidateSeed, onSuggestSeed, onClearSeedAssistance)
+            }
+            is BootstrapState.SeedConfirmation -> key(sensitiveUiEpoch) {
+                SeedConfirmationContent(state, onAcknowledgeSeed)
+            }
+            is BootstrapState.Home -> NavHost(navController, startDestination = WalletRoute.HOME.route) {
+                composable(WalletRoute.HOME.route) {
+                    HomeContent(state, connection, refreshStatus, fiatBalance, recovery, recoveryExpiry, balanceMasked, { balanceMasked = it },
+                        { navController.open(WalletRoute.RECEIVE) }, { navController.open(WalletRoute.SEND) },
+                        { navController.open(WalletRoute.SCAN) }, onRefreshHome, pendingIrreversibleOperation,
+                        onRefreshOperationReconciliation, activityState, onLoadActivityPage,
+                        onOpenActivityDetail, onDismissActivityDetail,
+                        navController::open)
+                }
+                composable(WalletRoute.RECEIVE.route) {
+                    ReceiveContent(state, operation, routedInput?.payload, routedInput?.type,
+                        { routedInput = null; navController.returnHome() }, onOperation, onClearOperation,
+                        ecashFrame, onStartEcashDisplay, onStopEcashDisplay, addresses,
+                        { navController.open(WalletRoute.SCAN) }, currencySettingsState, lnAddressStateOwner)
+                }
+                composable(WalletRoute.SEND.route) {
+                    TransferContent(state, operation, routedInput?.payload, routedInput?.type,
+                        { routedInput = null; navController.returnHome() }, onOperation, onClearOperation,
+                        ecashFrame, onStartEcashDisplay, onStopEcashDisplay,
+                        contactsState, { navController.open(WalletRoute.SCAN) })
+                }
+                composable(WalletRoute.SCAN.route) {
+                    QrScanner(onResult = onClassify, onBack = { onStopEcashDecoder(); navController.returnHome() }, frameHandler = { frame ->
+                        if (frame.startsWith("fedimint1")) { onEcashFrame(frame); ScanFrameDecision.CONTINUE }
+                        else { onClassify(frame); ScanFrameDecision.HANDLING }
+                    }, progressFrames = ecashDecodeProgress)
+                }
+                listOf(WalletRoute.WALLETS, WalletRoute.DETAILS, WalletRoute.GUARDIANS,
+                    WalletRoute.SETTINGS, WalletRoute.CURRENCY, WalletRoute.CONTACTS,
+                    WalletRoute.ADDRESSES, WalletRoute.ACCESS, WalletRoute.SEED_BACKUP,
+                    WalletRoute.LNADDR).forEach { route ->
+                    composable(route.route) {
+                        ManageContent(route, state, operation, navController::goBack,
+                            { navController.open(WalletRoute.JOIN) }, { navController.open(WalletRoute.WALLETS) },
+                            { navController.open(WalletRoute.CONTACTS) }, { navController.open(WalletRoute.ADDRESSES) },
+                            { navController.open(WalletRoute.ACCESS) }, { navController.open(WalletRoute.SEED_BACKUP) },
+                            { navController.open(WalletRoute.CURRENCY) }, { navController.open(WalletRoute.GUARDIANS) },
+                            { navController.open(WalletRoute.DETAILS) }, { navController.open(WalletRoute.LNADDR) },
+                            onOperation, onClearOperation, biometricAvailable, biometricEnabled, onBiometricToggle, onBackup,
+                            contactsState, onClearContactsMessage, connection, federationState, recovery, recoveryExpiry,
+                            currencySettingsState, onClearCurrencyMessage, addresses, onClassify, pendingIrreversibleOperation,
+                            onRefreshOperationReconciliation, lnAddressStateOwner)
+                    }
+                }
+                listOf(WalletRoute.JOIN, WalletRoute.RECOVER).forEach { route ->
+                    composable(route.route) {
+                        JoinContent(state.factoryHandle, state.snapshot.federations.size, routedInput?.payload, route == WalletRoute.RECOVER, operation,
+                            { routedInput = null; navController.returnHome(); onClearInvite() }, onJoin, { navController.open(WalletRoute.SCAN) })
+                    }
+                }
+            }
+            is BootstrapState.Error -> MessageContent("Wallet unavailable", state.message, onRetry, state.retryable)
+            is BootstrapState.Unavailable -> MessageContent("Native wallet preview", state.message, onRetry, true)
+        }
+    }
+}
+
+/**
+ * The wallet's screen chrome: app background, the top-centre glow from the prototype, and the
+ * 22dp gutter every screen body sits in. Extracted from [PyxApp] so the debug screenshot
+ * fixtures can render one screen inside exactly the chrome the app gives it, instead of
+ * re-deriving a lookalike that drifts.
+ */
+@Composable
+internal fun PyxAppChrome(
+    snackbarHost: @Composable () -> Unit = {},
+    content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
+) {
     Scaffold(
         modifier = Modifier.testTag("pyx_app"),
         containerColor = PyxBackground,
-        snackbarHost = { SnackbarHost(snackbarHostState, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) },
+        snackbarHost = snackbarHost,
     ) { padding ->
         Box(
             Modifier
@@ -277,79 +365,8 @@ fun PyxApp(
                 )
                 .padding(padding)
                 .padding(horizontal = 22.dp),
-        ) {
-            when (state) {
-                BootstrapState.Loading, BootstrapState.Creating, BootstrapState.Restoring,
-                BootstrapState.LoadingWallet -> LoadingContent(
-                    when (state) {
-                        BootstrapState.Creating -> "Creating wallet…"
-                        BootstrapState.Restoring -> "Restoring wallet…"
-                        BootstrapState.LoadingWallet -> "Loading wallet…"
-                        else -> "Starting wallet…"
-                    },
-                )
-                is BootstrapState.Onboarding -> key(sensitiveUiEpoch) {
-                    OnboardingContent(state, onCreate, onRestore, seedValidation, seedSuggestions,
-                        onValidateSeed, onSuggestSeed, onClearSeedAssistance)
-                }
-                is BootstrapState.SeedConfirmation -> key(sensitiveUiEpoch) {
-                    SeedConfirmationContent(state, onAcknowledgeSeed)
-                }
-                is BootstrapState.Home -> NavHost(navController, startDestination = WalletRoute.HOME.route) {
-                    composable(WalletRoute.HOME.route) {
-                        HomeContent(state, connection, refreshStatus, fiatBalance, recovery, recoveryExpiry, balanceMasked, { balanceMasked = it },
-                            { navController.open(WalletRoute.RECEIVE) }, { navController.open(WalletRoute.SEND) },
-                            { navController.open(WalletRoute.SCAN) }, onRefreshHome, pendingIrreversibleOperation,
-                            onRefreshOperationReconciliation, activityState, onLoadActivityPage,
-                            onOpenActivityDetail, onDismissActivityDetail,
-                            navController::open)
-                    }
-                    composable(WalletRoute.RECEIVE.route) {
-                        ReceiveContent(state, operation, routedInput?.payload, routedInput?.type,
-                            { routedInput = null; navController.returnHome() }, onOperation, onClearOperation,
-                            ecashFrame, onStartEcashDisplay, onStopEcashDisplay, addresses,
-                            { navController.open(WalletRoute.SCAN) }, currencySettingsState, lnAddressStateOwner)
-                    }
-                    composable(WalletRoute.SEND.route) {
-                        TransferContent(state, operation, routedInput?.payload, routedInput?.type,
-                            { routedInput = null; navController.returnHome() }, onOperation, onClearOperation,
-                            ecashFrame, onStartEcashDisplay, onStopEcashDisplay,
-                            contactsState, { navController.open(WalletRoute.SCAN) })
-                    }
-                    composable(WalletRoute.SCAN.route) {
-                        QrScanner(onResult = onClassify, onBack = { onStopEcashDecoder(); navController.returnHome() }, frameHandler = { frame ->
-                            if (frame.startsWith("fedimint1")) { onEcashFrame(frame); ScanFrameDecision.CONTINUE }
-                            else { onClassify(frame); ScanFrameDecision.HANDLING }
-                        }, progressFrames = ecashDecodeProgress)
-                    }
-                    listOf(WalletRoute.WALLETS, WalletRoute.DETAILS, WalletRoute.GUARDIANS,
-                        WalletRoute.SETTINGS, WalletRoute.CURRENCY, WalletRoute.CONTACTS,
-                        WalletRoute.ADDRESSES, WalletRoute.ACCESS, WalletRoute.SEED_BACKUP,
-                        WalletRoute.LNADDR).forEach { route ->
-                        composable(route.route) {
-                            ManageContent(route, state, operation, navController::goBack,
-                                { navController.open(WalletRoute.JOIN) }, { navController.open(WalletRoute.WALLETS) },
-                                { navController.open(WalletRoute.CONTACTS) }, { navController.open(WalletRoute.ADDRESSES) },
-                                { navController.open(WalletRoute.ACCESS) }, { navController.open(WalletRoute.SEED_BACKUP) },
-                                { navController.open(WalletRoute.CURRENCY) }, { navController.open(WalletRoute.GUARDIANS) },
-                                { navController.open(WalletRoute.DETAILS) }, { navController.open(WalletRoute.LNADDR) },
-                                onOperation, onClearOperation, biometricAvailable, biometricEnabled, onBiometricToggle, onBackup,
-                                contactsState, onClearContactsMessage, connection, federationState, recovery, recoveryExpiry,
-                                currencySettingsState, onClearCurrencyMessage, addresses, onClassify, pendingIrreversibleOperation,
-                                onRefreshOperationReconciliation, lnAddressStateOwner)
-                        }
-                    }
-                    listOf(WalletRoute.JOIN, WalletRoute.RECOVER).forEach { route ->
-                        composable(route.route) {
-                            JoinContent(state.factoryHandle, state.snapshot.federations.size, routedInput?.payload, route == WalletRoute.RECOVER, operation,
-                                { routedInput = null; navController.returnHome(); onClearInvite() }, onJoin, { navController.open(WalletRoute.SCAN) })
-                        }
-                    }
-                }
-                is BootstrapState.Error -> MessageContent("Wallet unavailable", state.message, onRetry, state.retryable)
-                is BootstrapState.Unavailable -> MessageContent("Native wallet preview", state.message, onRetry, true)
-            }
-        }
+            content = content,
+        )
     }
 }
 
@@ -1895,7 +1912,9 @@ private enum class TransferAmountUnit { SATS, BTC, FIAT }
  * an amount is set). Ecash is received by scanning, so that tab leads with the scanner.
  */
 @Composable
-private fun ReceiveContent(
+// `internal` rather than `private` only so the debug screenshot fixtures can render the real
+// receive screen (see ScreenshotFixtureActivity); nothing outside this module uses it.
+internal fun ReceiveContent(
     state: BootstrapState.Home,
     operation: WalletOperation,
     initialPayload: String?,

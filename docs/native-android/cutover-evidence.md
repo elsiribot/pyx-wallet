@@ -339,6 +339,33 @@ provenance, is recorded in
 Physical-device rendering, TalkBack/Accessibility Scanner and reviewer signoff
 remain open.
 
+### Lightning-address screenshot fixtures — PARTIAL (2026-09-07)
+
+`tool/certify-native-android-screenshots.sh` now also enumerates
+`receive_lnaddr_banner`, `receive_lnaddr_claimed`, `lnaddr_claim_sheet`, and
+`lnaddr_settings_list` at both the 1.0 and 1.3 font scales, each with a
+UIAutomator structural assertion and a settle window for the surfaces that only
+reach their asserted state after the first frame (bottom-sheet entry, the claim
+sheet's one-second availability debounce). All four are driven by a canned
+`NativeWalletApi` inside the debug fixture activity; no live wallet, no
+claimable name, and no payable payload reaches them.
+
+The runner itself was NOT executed for this change: the only Android target
+available on the development machine is a redroid container, and the runner
+deliberately refuses any target that is not an `emulator-*` transport with
+`ro.kernel.qemu=1`. That guard was left intact. The eight new captures were
+instead reproduced by hand on redroid at the same 1080×2337 / density 443
+reference viewport and both font scales; all eight structural assertions passed
+and the images were reviewed by eye. The certification lane still needs one
+emulator run to produce a hashed manifest covering these fixtures.
+
+The fixture activity previously inherited the application's
+`Theme.Pyx.Starting` without installing the splash screen, so every certified
+screenshot carried a light action bar across the top and lost roughly 50 dp of
+the very viewport the certification pins. It now declares `Theme.Pyx`
+explicitly, so captures show only app chrome. Screenshots taken before
+2026-09-07 include that band.
+
 ### Deterministic onboarding and recovery coverage — PASS (2026-09-02)
 
 The complete debug unit-test suite and lint passed after adding focused
