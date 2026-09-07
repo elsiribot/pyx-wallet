@@ -70,7 +70,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.withStyle
@@ -139,9 +138,9 @@ fun PyxBackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
  * its chevron and actions at `screenTitle` (e.g. "Lightning addresses" plus a "+" action)
  * therefore steps down to the existing `centeredTitle` size to stay on one line. Short
  * titles keep the full `screenTitle` size, and a title that cannot fit on one line even
- * at the smaller size — long titles at large font scales — still wraps rather than being
- * truncated, which is why the wrapped branch keeps the display size and allows a second
- * line. No new type token: both sizes come from `PyxType`.
+ * at the smaller size — long titles at large font scales — keeps the display size and
+ * wraps freely, exactly as every title did before. No new type token: both sizes come
+ * from `PyxType`.
  */
 @Composable
 fun PyxTopBar(
@@ -157,7 +156,10 @@ fun PyxTopBar(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (onBack != null) PyxBackButton(onBack)
-        BoxWithConstraints(titleSemantics.weight(1f)) {
+        // Only the layout sits on the box; `titleSemantics` stays on the title itself, so
+        // `heading()` and the title string remain one node (neither BoxWithConstraints nor a
+        // plain semantics block merges its descendants).
+        BoxWithConstraints(Modifier.weight(1f)) {
             val measurer = rememberTextMeasurer()
             val available = constraints.maxWidth
             // Measured against the width the chevron and the actions actually leave, so the
@@ -167,7 +169,9 @@ fun PyxTopBar(
             val display = PyxType.screenTitle
             val compact = display.copy(fontSize = PyxType.centeredTitle.fontSize)
             val style = if (fitsOneLine(display) || !fitsOneLine(compact)) display else compact
-            Text(title, style = style, color = PyxText, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // No line cap: the fitting branches are measured to fit on one line anyway, and the
+            // wrapped branch is exactly the unbounded wrap every title had before.
+            Text(title, style = style, color = PyxText, modifier = titleSemantics)
         }
         actions()
     }
