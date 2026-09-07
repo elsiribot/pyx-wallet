@@ -13,6 +13,30 @@ sealed interface ClaimCheck {
     data class Error(val hint: String) : ClaimCheck
 }
 
+/** Which lightning-address surface the receive screen shows beside the reusable code. */
+enum class ReceiveLnaddrSurface { NONE, CLAIM_BANNER, ADDRESS_ROW }
+
+object ReceiveLnaddrPresentation {
+    /** Title `WalletOperation.Success` carries for the reusable, amountless LNURL. */
+    const val LNURL_RECEIVE = "LNURL receive"
+
+    /** The receive screen only offers a lightning address in the state the address itself
+     * stands in for: the Lightning tab showing the amountless reusable LNURL. While an amount
+     * is being typed, or once a BOLT11 invoice / on-chain address is on screen, the surface is
+     * [ReceiveLnaddrSurface.NONE] — an address can't carry an amount the sender must pay. */
+    fun surface(
+        tab: Int,
+        amount: String,
+        typing: Boolean,
+        operationTitle: String?,
+        hasPrimary: Boolean,
+    ): ReceiveLnaddrSurface = when {
+        tab != 0 || amount.isNotBlank() || typing || operationTitle != LNURL_RECEIVE -> ReceiveLnaddrSurface.NONE
+        hasPrimary -> ReceiveLnaddrSurface.ADDRESS_ROW
+        else -> ReceiveLnaddrSurface.CLAIM_BANNER
+    }
+}
+
 object LnaddrClaimPresentation {
     private const val MAX_USERNAME_LENGTH = 64
     private val ALLOWED_CHARS = ('a'..'z') + ('0'..'9') + listOf('-', '_', '.')

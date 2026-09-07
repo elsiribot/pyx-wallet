@@ -308,7 +308,7 @@ fun PyxApp(
                         ReceiveContent(state, operation, routedInput?.payload, routedInput?.type,
                             { routedInput = null; navController.returnHome() }, onOperation, onClearOperation,
                             ecashFrame, onStartEcashDisplay, onStopEcashDisplay, addresses,
-                            { navController.open(WalletRoute.SCAN) }, currencySettingsState)
+                            { navController.open(WalletRoute.SCAN) }, currencySettingsState, lnAddressStateOwner)
                     }
                     composable(WalletRoute.SEND.route) {
                         TransferContent(state, operation, routedInput?.payload, routedInput?.type,
@@ -1909,6 +1909,7 @@ private fun ReceiveContent(
     addresses: List<cash.pyx.app.nativeapi.OnchainAddress>,
     scan: () -> Unit,
     currencySettingsState: cash.pyx.app.data.CurrencySettingsState = cash.pyx.app.data.CurrencySettingsState(),
+    lnAddressStateOwner: LnAddressStateOwner? = null,
 ) {
     val client = state.snapshot.selected?.clientHandle ?: return
     var pendingFiat by remember { mutableStateOf<String?>(null) }
@@ -1923,6 +1924,8 @@ private fun ReceiveContent(
     var unitSheet by remember { mutableStateOf(false) }
     var typing by remember { mutableStateOf(false) }
     var convertedSats by remember { mutableStateOf<Long?>(null) }
+    var showLnurlCode by remember { mutableStateOf(false) }
+    var claimSheet by remember { mutableStateOf(false) }
     val currentOperation by rememberUpdatedState(operation)
     val currentAddresses by rememberUpdatedState(addresses)
     LaunchedEffect(initialPayload, initialType) { clear() }
@@ -2070,12 +2073,42 @@ private fun ReceiveContent(
                 bolt = tab == 0,
                 hint = if (operation is WalletOperation.Submitting) "Generating…" else null,
             )
-            payload?.let { CodeField(it) }
+            // `lnAddressState` is read only to subscribe this composition to the owner's
+            // StateFlow; `primaryFor` itself reads the owner's current value (same seam the
+            // settings row uses).
+            val lnAddressState = lnAddressStateOwner?.state?.collectAsStateWithLifecycle()?.value
+            val lnAddressPrimary = lnAddressState?.let { lnAddressStateOwner.primaryFor(state.snapshot.selected?.federationId) }
+            val lnaddrSurface = ReceiveLnaddrPresentation.surface(
+                tab = tab, amount = amount, typing = typing,
+                operationTitle = success?.title?.takeIf { payload != null },
+                hasPrimary = lnAddressPrimary != null,
+            )
+            val addressRow = lnaddrSurface == ReceiveLnaddrSurface.ADDRESS_ROW
+            if (addressRow) lnAddressPrimary?.let { primary ->
+                cash.pyx.app.ui.components.LnaddrReceiveAddressRow(
+                    address = primary.display,
+                    lnurlShown = showLnurlCode,
+                    onToggleLnurl = { showLnurlCode = !showLnurlCode },
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            }
+            payload?.takeIf { !addressRow || showLnurlCode }?.let { CodeField(it) }
+            if (lnaddrSurface == ReceiveLnaddrSurface.CLAIM_BANNER) cash.pyx.app.ui.components.LnaddrClaimBanner(
+                onClaim = {
+                    // The claim sheet fills its domain list from the owner's discovered servers
+                    // and does not refresh on mount, so prime it on the way in.
+                    lnAddressStateOwner?.refresh(state.factoryHandle)
+                    claimSheet = true
+                },
+                modifier = Modifier.padding(top = 12.dp),
+            )
             // faint centred note describing the shown code
             val note: String? = when {
                 operation is WalletOperation.Failure -> null // rendered separately in red
                 operation is WalletOperation.Submitting -> "Generating…"
                 typing -> "Pause typing to generate"
+                // The address row carries its own "Reusable — share it anywhere" caption.
+                addressRow -> null
                 tab == 0 && payload != null && !hasAmount -> "Reusable code — the sender chooses the amount"
                 tab == 1 && payload != null && !hasAmount -> "Reusable address — pay any amount to your wallet"
                 else -> null
@@ -2136,6 +2169,9 @@ private fun ReceiveContent(
             }
         },
         dismiss = { unitSheet = false },
+    )
+    if (claimSheet && lnAddressStateOwner != null) cash.pyx.app.ui.components.LnaddrClaimSheet(
+        lnAddressStateOwner, client, state.factoryHandle, onDismiss = { claimSheet = false },
     )
 }
 
