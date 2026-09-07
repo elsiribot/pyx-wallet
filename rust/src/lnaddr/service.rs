@@ -13,7 +13,7 @@ use fedimint_core::config::FederationId;
 use fedimint_core::db::Database;
 
 use super::{
-    HttpTransport, LnAddressRecord, LnAddressStore, LnaddrApi, OwnedAddress, QuoteResult,
+    ApiError, HttpTransport, LnAddressRecord, LnAddressStore, LnaddrApi, OwnedAddress, QuoteResult,
     RegisterOk, ReqwestTransport, default_server_domain, default_server_origin, is_public_domain,
     nostr_keypair,
 };
@@ -77,23 +77,16 @@ fn now_secs() -> u64 {
 
 /// Whether a failed `release` remote call should still let local removal
 /// proceed: a `401` (device clock skew, per [`LnaddrApi::remove`]'s own
-/// message) or a "not found" response. Either way the server can't do
-/// anything useful with this record either, so treating it as an error
-/// would just wedge the UI on a dead/unreachable-auth server.
+/// message) or a `404`. Either way the server can't do anything useful with
+/// this record either, so treating it as an error would just wedge the UI on
+/// a dead/unreachable-auth server.
 ///
-/// `LnaddrApi::remove` has no structured status code to match on — its
-/// non-204, non-401 errors all come from `legacy_error_message`, which
-/// renders as `"lnaddrd request failed with status {n}"`, so `"404"` is
-/// what actually appears on the wire today; the `"not found"` substring
-/// check is currently dead (no code path in `api.rs` produces that text)
-/// but kept in case the server-side error body ever grows a `not_found`
-/// JSON code that flows through unchanged.
-fn is_release_recoverable(error: &str) -> bool {
-    let lower = error.to_lowercase();
-    lower.contains("401")
-        || lower.contains("unauthorized")
-        || lower.contains("404")
-        || lower.contains("not found")
+/// Matches on [`ApiError::status`], not on the rendered message: an earlier
+/// version substring-matched `"401"`/`"404"` against the error text, which
+/// any origin or address containing those digits would satisfy — and which
+/// silently classified a transport error mentioning them as recoverable.
+fn is_release_recoverable(error: &ApiError) -> bool {
+    matches!(error.status, Some(401) | Some(404))
 }
 
 impl LnAddressService<ReqwestTransport> {
@@ -199,7 +192,7 @@ impl<T: HttpTransport> LnAddressService<T> {
                 self.store.remove(domain, name).await;
                 Ok(())
             }
-            Err(error) => Err(error),
+            Err(error) => Err(error.message),
         }
     }
 
@@ -640,6 +633,33 @@ mod tests {
             transport.request_count(),
             1,
             "the remote DELETE must still have been attempted"
+        );
+        assert!(
+            svc.store.get("example.com", "alice").await.is_some(),
+            "the record must survive an unrecoverable remote error"
+        );
+    }
+
+    /// The recoverable-release decision keys off the real HTTP status, not
+    /// off digits in the rendered message. A `500` from a server whose origin
+    /// happens to contain "404" used to be classified recoverable — the local
+    /// record was deleted while the server still held the address.
+    #[tokio::test]
+    async fn release_does_not_treat_a_404_shaped_url_as_a_404() {
+        let transport = Arc::new(FakeTransport::new(500, ""));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
+        svc.store
+            .upsert(LnAddressRecord {
+                server_origin: "https://pay404.example.com".to_string(),
+                ..record(None, "LNURL1A", 100)
+            })
+            .await;
+
+        let result = svc.release("example.com", "alice").await;
+
+        assert!(
+            result.is_err(),
+            "a 500 is a 500 however the origin is spelled"
         );
         assert!(
             svc.store.get("example.com", "alice").await.is_some(),

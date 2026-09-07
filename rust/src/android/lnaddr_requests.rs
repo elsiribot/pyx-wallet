@@ -231,6 +231,17 @@ fn server_json(server: DiscoveredServer) -> Value {
     })
 }
 
+/// Longest server-supplied `reason` code forwarded to Kotlin. lnaddrd's own
+/// codes are short slugs; anything longer is a misbehaving server and is
+/// truncated rather than allowed to grow the bridge payload.
+const MAX_QUOTE_REASON_BYTES: usize = 64;
+
+/// `invalid` folds together lnaddrd's `invalid_input`, `unsupported_domain`
+/// and `length_disabled` (see `LnaddrApi::quote`), and the spec requires the
+/// last two to be distinguishable in the claim sheet — so the code has to
+/// cross the bridge. It is emitted only for `invalid`, since that is the only
+/// state carrying one, and only when non-empty, so Kotlin's `optionalPayload`
+/// read stays the "absent" case for every other state.
 fn quote_json(result: &QuoteResult) -> Value {
     let (state, price_msat): (&str, Option<i64>) = match result {
         QuoteResult::Free => ("free", None),
@@ -240,7 +251,14 @@ fn quote_json(result: &QuoteResult) -> Value {
         QuoteResult::Invalid(_) => ("invalid", None),
         QuoteResult::RateLimited => ("rate_limited", None),
     };
-    json!({ "state": state, "priceMsat": price_msat })
+    let mut value = json!({ "state": state, "priceMsat": price_msat });
+    if let QuoteResult::Invalid(reason) = result {
+        let reason: String = reason.chars().take(MAX_QUOTE_REASON_BYTES).collect();
+        if !reason.is_empty() {
+            value["reason"] = Value::String(reason);
+        }
+    }
+    value
 }
 
 /// `origin` is interpolated straight into request URLs and is what the wallet
@@ -360,12 +378,38 @@ mod tests {
             "{\"priceMsat\":null,\"state\":\"reserved\"}"
         );
         assert_eq!(
-            serialize(quote_json(&QuoteResult::Invalid("bad_domain".to_string()))).unwrap(),
-            "{\"priceMsat\":null,\"state\":\"invalid\"}"
-        );
-        assert_eq!(
             serialize(quote_json(&QuoteResult::RateLimited)).unwrap(),
             "{\"priceMsat\":null,\"state\":\"rate_limited\"}"
+        );
+    }
+
+    /// `invalid` folds three spec'd, separately-renderable quote errors
+    /// together, so the server's code has to survive the bridge or the claim
+    /// sheet shows a red dot with no text.
+    #[test]
+    fn invalid_quote_json_carries_the_reason_code() {
+        for code in ["invalid_input", "unsupported_domain", "length_disabled"] {
+            assert_eq!(
+                serialize(quote_json(&QuoteResult::Invalid(code.to_string()))).unwrap(),
+                format!("{{\"priceMsat\":null,\"reason\":\"{code}\",\"state\":\"invalid\"}}")
+            );
+        }
+    }
+
+    #[test]
+    fn quote_reason_is_omitted_when_empty_and_bounded_when_long() {
+        assert_eq!(
+            serialize(quote_json(&QuoteResult::Invalid(String::new()))).unwrap(),
+            "{\"priceMsat\":null,\"state\":\"invalid\"}",
+            "an empty code must not become an empty-string reason key"
+        );
+
+        let long = "x".repeat(MAX_QUOTE_REASON_BYTES * 4);
+        let json = serialize(quote_json(&QuoteResult::Invalid(long))).unwrap();
+        let parsed: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed["reason"].as_str().unwrap().len(),
+            MAX_QUOTE_REASON_BYTES
         );
     }
 

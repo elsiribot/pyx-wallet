@@ -12,7 +12,7 @@ mod service;
 mod store;
 
 pub(crate) use api::{
-    HttpTransport, LnaddrApi, OwnedAddress, QuoteResult, RegisterOk, ReqwestTransport,
+    ApiError, HttpTransport, LnaddrApi, OwnedAddress, QuoteResult, RegisterOk, ReqwestTransport,
 };
 #[allow(unused_imports)] // DEFAULT_SERVER stays unused now that callers go through
 // default_server_origin()/default_server_domain(), which honour the debug override;

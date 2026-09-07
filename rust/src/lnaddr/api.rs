@@ -115,6 +115,42 @@ pub(crate) struct RegisterOk {
     pub active: bool,
 }
 
+/// A failed call, carrying the HTTP status when the failure came from a
+/// response rather than from the transport itself.
+///
+/// Only [`LnaddrApi::remove`] returns this today, because
+/// [`crate::lnaddr::LnAddressService::release`] has to decide whether local
+/// removal may proceed based on *which* status came back — a decision that
+/// was previously made by substring-matching `"401"`/`"404"` against the
+/// rendered message, which any URL containing those digits would satisfy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ApiError {
+    pub status: Option<u16>,
+    pub message: String,
+}
+
+impl ApiError {
+    fn from_status(status: u16, message: String) -> Self {
+        Self {
+            status: Some(status),
+            message,
+        }
+    }
+
+    fn from_transport(message: String) -> Self {
+        Self {
+            status: None,
+            message,
+        }
+    }
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
 /// One entry from `GET /api/v1/addresses`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OwnedAddress {
@@ -359,7 +395,10 @@ impl<T: HttpTransport> LnaddrApi<T> {
         Ok(())
     }
 
-    pub async fn remove(&self, origin: &str, domain: &str, username: &str) -> Result<(), String> {
+    /// Any `2xx` is success: lnaddrd answers `204`, but a proxy or a future
+    /// server version answering `200` still means the address is gone, and
+    /// treating that as a failure would strand the local record.
+    pub async fn remove(&self, origin: &str, domain: &str, username: &str) -> Result<(), ApiError> {
         let url = format!("{origin}/lnaddress/remove");
         let body = json!({ "domain": domain, "username": username })
             .to_string()
@@ -369,13 +408,17 @@ impl<T: HttpTransport> LnaddrApi<T> {
         let (status, _body) = self
             .transport
             .execute("DELETE", &url, headers, Some(body))
-            .await?;
+            .await
+            .map_err(ApiError::from_transport)?;
 
         if status == 401 {
-            return Err(UNAUTHORIZED_MSG.to_string());
+            return Err(ApiError::from_status(status, UNAUTHORIZED_MSG.to_string()));
         }
-        if status != 204 {
-            return Err(Self::legacy_error_message(status));
+        if !(200..300).contains(&status) {
+            return Err(ApiError::from_status(
+                status,
+                Self::legacy_error_message(status),
+            ));
         }
         Ok(())
     }
@@ -691,7 +734,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_expects_204() {
+    async fn remove_accepts_any_2xx() {
         let transport = FakeTransport::new(204, "");
         let api = LnaddrApi::new(transport, test_keypair());
 
@@ -705,10 +748,50 @@ mod tests {
         let auth = header_value(&request, "Authorization").expect("Authorization header present");
         assert!(auth.starts_with("Nostr "), "got {auth:?}");
 
+        // lnaddrd answers 204, but a proxy (or a future server version) may
+        // answer 200 for the same outcome; the address is gone either way.
         let transport = FakeTransport::new(200, "");
         let api = LnaddrApi::new(transport, test_keypair());
         api.remove("https://pay.example.com", "example.com", "alice")
             .await
-            .expect_err("only 204 counts as success");
+            .expect("any 2xx means the address is gone");
+    }
+
+    /// `release` decides whether to drop the local record from
+    /// [`ApiError::status`], so the status has to survive the call.
+    #[tokio::test]
+    async fn remove_errors_carry_their_status() {
+        for status in [401u16, 404, 500] {
+            let transport = FakeTransport::new(status, "");
+            let api = LnaddrApi::new(transport, test_keypair());
+
+            let error = api
+                .remove("https://pay.example.com", "example.com", "alice")
+                .await
+                .expect_err("a non-2xx must be an error");
+
+            assert_eq!(error.status, Some(status));
+        }
+
+        // A transport-level failure has no status at all, and must not be
+        // mistaken for a recoverable one.
+        struct DeadTransport;
+        impl HttpTransport for DeadTransport {
+            async fn execute(
+                &self,
+                _method: &str,
+                _url: &str,
+                _headers: Vec<(String, String)>,
+                _body: Option<Vec<u8>>,
+            ) -> Result<(u16, Vec<u8>), String> {
+                Err("connection refused after 401 attempts".to_string())
+            }
+        }
+        let api = LnaddrApi::new(DeadTransport, test_keypair());
+        let error = api
+            .remove("https://pay.example.com", "example.com", "alice")
+            .await
+            .expect_err("a transport failure is an error");
+        assert_eq!(error.status, None);
     }
 }
