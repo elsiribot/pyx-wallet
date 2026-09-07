@@ -9,10 +9,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -71,6 +69,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -134,13 +133,16 @@ fun PyxBackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 /**
  * Screen title row: chevron back + Space Grotesk title, optional trailing actions.
  *
- * The title always occupies exactly one line. Short titles render at the full
- * `screenTitle` size; a long one (e.g. "Lightning addresses" next to a back chevron and
- * a "+" action) steps down towards `centeredTitle` rather than wrapping into a second
- * line that would collide with the chevron and the actions. Both bounds are existing
- * theme type tokens, so this introduces no new type scale.
+ * The title, the chevron and the actions are `Row` siblings, so a wrapped title never
+ * overlaps them — it grows the bar and leaves the chevron and the action buttons centred
+ * against a two-line block, which reads as misaligned. A title that does not fit beside
+ * its chevron and actions at `screenTitle` (e.g. "Lightning addresses" plus a "+" action)
+ * therefore steps down to the existing `centeredTitle` size to stay on one line. Short
+ * titles keep the full `screenTitle` size, and a title that cannot fit on one line even
+ * at the smaller size — long titles at large font scales — still wraps rather than being
+ * truncated, which is why the wrapped branch keeps the display size and allows a second
+ * line. No new type token: both sizes come from `PyxType`.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PyxTopBar(
     title: String,
@@ -155,17 +157,18 @@ fun PyxTopBar(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (onBack != null) PyxBackButton(onBack)
-        BasicText(
-            title,
-            modifier = titleSemantics.weight(1f),
-            style = PyxType.screenTitle.copy(color = PyxText),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            autoSize = TextAutoSize.StepBased(
-                minFontSize = PyxType.centeredTitle.fontSize,
-                maxFontSize = PyxType.screenTitle.fontSize,
-            ),
-        )
+        BoxWithConstraints(titleSemantics.weight(1f)) {
+            val measurer = rememberTextMeasurer()
+            val available = constraints.maxWidth
+            // Measured against the width the chevron and the actions actually leave, so the
+            // step-down happens only on the screens that need it.
+            fun fitsOneLine(style: TextStyle) =
+                measurer.measure(text = title, style = style, softWrap = false, maxLines = 1).size.width <= available
+            val display = PyxType.screenTitle
+            val compact = display.copy(fontSize = PyxType.centeredTitle.fontSize)
+            val style = if (fitsOneLine(display) || !fitsOneLine(compact)) display else compact
+            Text(title, style = style, color = PyxText, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
         actions()
     }
 }

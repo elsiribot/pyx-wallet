@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
@@ -142,7 +143,9 @@ fun LnaddrClaimSheet(
                         color = Color.Transparent,
                         maxLines = 1,
                         softWrap = false,
-                        modifier = Modifier.padding(end = 2.dp),
+                        // Sizing-only: without this the username is announced twice (once here,
+                        // once from the field) and shows up twice in accessibility-tree dumps.
+                        modifier = Modifier.padding(end = 2.dp).clearAndSetSemantics {},
                     )
                     BasicTextField(
                         value = rawUsername,

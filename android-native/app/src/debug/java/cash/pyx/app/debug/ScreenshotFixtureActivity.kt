@@ -3,6 +3,8 @@ package cash.pyx.app.debug
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
@@ -27,6 +29,12 @@ import cash.pyx.app.ui.theme.PyxTheme
 class ScreenshotFixtureActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Same forced-dark system bars MainActivity applies; without it the certified shots
+        // carry a light navigation bar the app never draws.
+        enableEdgeToEdge(
+            statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         val fixture = intent.getStringExtra(EXTRA_FIXTURE).orEmpty()
         setContent { PyxTheme { ScreenshotFixture(fixture) } }
     }
@@ -64,8 +72,14 @@ private fun ScreenshotFixture(fixture: String) = when (fixture) {
     // Lightning-address fixtures. All four drive the real screens through a fake
     // NativeWalletApi (see [FixtureLnaddrApi]) rather than a live wallet, so the canned
     // addresses/servers below are the only data that ever reaches them.
+    // The receive screen is taller than a 390x844 dp viewport, so both lnaddr surfaces sit at
+    // or below the fold: the `_scrolled` variants start at the bottom of the screen and are the
+    // ones certification asserts on, so the marker it greps is actually in the image.
     "receive_lnaddr_banner" -> LnaddrReceiveFixture(addresses = emptyList())
+    "receive_lnaddr_banner_scrolled" -> LnaddrReceiveFixture(addresses = emptyList(), scrolledToEnd = true)
     "receive_lnaddr_claimed" -> LnaddrReceiveFixture(addresses = listOf(SYNTHETIC_PRIMARY))
+    "receive_lnaddr_claimed_scrolled" ->
+        LnaddrReceiveFixture(addresses = listOf(SYNTHETIC_PRIMARY), scrolledToEnd = true)
     "lnaddr_claim_sheet" -> LnaddrFixtureScope(addresses = emptyList()) { owner, state ->
         if (state.servers.isNotEmpty()) cash.pyx.app.ui.components.LnaddrClaimSheet(
             owner, clientHandle = 3L, factoryHandle = 2L, onDismiss = {}, initialUsername = "eric",
@@ -159,7 +173,14 @@ private fun LnaddrFixtureScope(
 /** The receive screen's Lightning tab holding the amountless reusable LNURL — the one state
  * where the claim banner (no primary) or the address row (primary) appears. */
 @Composable
-private fun LnaddrReceiveFixture(addresses: List<LnAddress>) = LnaddrFixtureScope(addresses) { owner, _ ->
+private fun LnaddrReceiveFixture(
+    addresses: List<LnAddress>,
+    scrolledToEnd: Boolean = false,
+) = LnaddrFixtureScope(addresses) { owner, _ ->
+    val scrollState = rememberScrollState()
+    // Keyed on maxValue: the first frame measures 0, so the scroll lands once the QR, the code
+    // field and the lnaddr surface below it have been laid out.
+    if (scrolledToEnd) LaunchedEffect(scrollState.maxValue) { scrollState.scrollTo(scrollState.maxValue) }
     cash.pyx.app.ui.ReceiveContent(
         state = syntheticHome(),
         operation = cash.pyx.app.ui.WalletOperation.Success("LNURL receive", SYNTHETIC_LNURL),
@@ -174,6 +195,7 @@ private fun LnaddrReceiveFixture(addresses: List<LnAddress>) = LnaddrFixtureScop
         addresses = emptyList(),
         scan = {},
         lnAddressStateOwner = owner,
+        scrollState = scrollState,
     )
 }
 

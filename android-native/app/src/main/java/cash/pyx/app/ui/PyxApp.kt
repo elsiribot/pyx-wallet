@@ -1929,6 +1929,9 @@ internal fun ReceiveContent(
     scan: () -> Unit,
     currencySettingsState: cash.pyx.app.data.CurrencySettingsState = cash.pyx.app.data.CurrencySettingsState(),
     lnAddressStateOwner: LnAddressStateOwner? = null,
+    // Hoisted only so a screenshot fixture can present the screen already scrolled; the app
+    // never passes it and gets the same per-entry state it had before.
+    scrollState: androidx.compose.foundation.ScrollState = rememberScrollState(),
 ) {
     val client = state.snapshot.selected?.clientHandle ?: return
     var pendingFiat by remember { mutableStateOf<String?>(null) }
@@ -1997,7 +2000,7 @@ internal fun ReceiveContent(
         }
     }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
+        Modifier.fillMaxSize().verticalScroll(scrollState).padding(vertical = 12.dp),
     ) {
         PyxTopBar("Receive Bitcoin", onBack = back)
         cash.pyx.app.ui.components.AssetPill()
