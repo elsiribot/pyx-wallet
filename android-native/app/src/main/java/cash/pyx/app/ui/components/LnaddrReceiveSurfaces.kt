@@ -71,7 +71,8 @@ fun LnaddrClaimBanner(onClaim: () -> Unit, modifier: Modifier = Modifier) {
             background = PyxOrange.copy(alpha = 0.16f),
         )
         Column(Modifier.weight(1f)) {
-            Text("Claim your Lightning address", style = PyxType.rowTitle.copy(fontSize = 14.sp), color = PyxText)
+            // Matches the claim sheet's own title, and fits the row on one line at 390dp.
+            Text("Claim your address", style = PyxType.rowTitle.copy(fontSize = 14.sp), color = PyxText)
             Text(
                 "Get paid at a name, not a code",
                 style = PyxType.rowSub, color = PyxMuted,

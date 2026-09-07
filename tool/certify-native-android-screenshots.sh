@@ -110,7 +110,7 @@ capture home_tx_sheet_f100 home_tx_sheet "Lightning received"
 capture send_receive_confirmation_f100 send_receive_confirmation "No payment will be submitted from this fixture"
 capture settings_access_seed_safe_f100 settings_access_seed_safe "No seed words are present in this fixture"
 capture error_offline_f100 error_offline "Could not reach federation guardians"
-capture receive_lnaddr_banner_f100 receive_lnaddr_banner "Claim your Lightning address" 2
+capture receive_lnaddr_banner_f100 receive_lnaddr_banner "Claim your address" 2
 capture receive_lnaddr_claimed_f100 receive_lnaddr_claimed "@pyx.cash" 2
 capture lnaddr_claim_sheet_f100 lnaddr_claim_sheet "This name is available" 3
 capture lnaddr_settings_list_f100 lnaddr_settings_list "Unassigned" 2
@@ -123,7 +123,7 @@ capture home_tx_sheet_f130 home_tx_sheet "Lightning received"
 capture send_receive_confirmation_f130 send_receive_confirmation "No payment will be submitted from this fixture"
 capture settings_access_seed_safe_f130 settings_access_seed_safe "No seed words are present in this fixture"
 capture error_offline_f130 error_offline "Could not reach federation guardians"
-capture receive_lnaddr_banner_f130 receive_lnaddr_banner "Claim your Lightning address" 2
+capture receive_lnaddr_banner_f130 receive_lnaddr_banner "Claim your address" 2
 capture receive_lnaddr_claimed_f130 receive_lnaddr_claimed "@pyx.cash" 2
 capture lnaddr_claim_sheet_f130 lnaddr_claim_sheet "This name is available" 3
 capture lnaddr_settings_list_f130 lnaddr_settings_list "Unassigned" 2

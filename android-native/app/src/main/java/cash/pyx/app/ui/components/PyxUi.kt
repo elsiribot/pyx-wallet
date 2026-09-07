@@ -9,7 +9,10 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -68,6 +71,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.withStyle
@@ -127,7 +131,16 @@ fun PyxBackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
-/** Screen title row: chevron back + 27sp Space Grotesk title, optional trailing actions. */
+/**
+ * Screen title row: chevron back + Space Grotesk title, optional trailing actions.
+ *
+ * The title always occupies exactly one line. Short titles render at the full
+ * `screenTitle` size; a long one (e.g. "Lightning addresses" next to a back chevron and
+ * a "+" action) steps down towards `centeredTitle` rather than wrapping into a second
+ * line that would collide with the chevron and the actions. Both bounds are existing
+ * theme type tokens, so this introduces no new type scale.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PyxTopBar(
     title: String,
@@ -142,7 +155,17 @@ fun PyxTopBar(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (onBack != null) PyxBackButton(onBack)
-        Text(title, style = PyxType.screenTitle, color = PyxText, modifier = titleSemantics.weight(1f))
+        BasicText(
+            title,
+            modifier = titleSemantics.weight(1f),
+            style = PyxType.screenTitle.copy(color = PyxText),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = PyxType.centeredTitle.fontSize,
+                maxFontSize = PyxType.screenTitle.fontSize,
+            ),
+        )
         actions()
     }
 }
