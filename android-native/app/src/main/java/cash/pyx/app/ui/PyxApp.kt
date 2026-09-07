@@ -1170,9 +1170,9 @@ private fun ManageContent(
                         PyxDivider()
                         CardRow("Manage contacts", chevron = true, onClick = openContacts)
                         PyxDivider()
-                        val lnAddressPrimary = selected?.federationId?.let { federationId ->
-                            lnAddressState?.addresses?.firstOrNull { it.federationId == federationId && it.isPrimary }
-                        }
+                        // `lnAddressState` is read only to subscribe this composition to the
+                        // owner's StateFlow; `primaryFor` itself reads the owner's current value.
+                        val lnAddressPrimary = lnAddressState?.let { lnAddressStateOwner?.primaryFor(selected?.federationId) }
                         CardRow("Lightning address", value = lnAddressPrimary?.display ?: "Claim",
                             valueStyle = PyxType.settingsValue, valueColor = PyxFaint, chevron = true, onClick = openLnaddr)
                     }

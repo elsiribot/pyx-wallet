@@ -175,6 +175,7 @@ class WalletBootstrapViewModel internal constructor(
     @Volatile private var refreshGeneration = 0L
     @Volatile private var resumed = false
     @Volatile private var operationGeneration = 0L
+    @Volatile private var lnAddressPrimedFactory: Long? = null
     @Volatile private var seedConfirmationRedactedForBackground = false
     private val mutableState = MutableStateFlow<BootstrapState>(BootstrapState.Loading)
     val state: StateFlow<BootstrapState> = mutableState.asStateFlow()
@@ -234,6 +235,14 @@ class WalletBootstrapViewModel internal constructor(
             else -> Unit // Preserve cached history across transient loading states.
         }
         onchainAddressStateOwner.selectClient((next as? BootstrapState.Home)?.snapshot?.selected?.clientHandle)
+        // Primes the Settings row's "primary address" display without waiting for the user to
+        // open the Lightning-addresses screen. Addresses belong to the whole factory (not a
+        // single client), so this only needs to run once per factory handle, not on every
+        // snapshot/live-refresh tick that flows through publishState.
+        if (next is BootstrapState.Home && lnAddressPrimedFactory != next.factoryHandle) {
+            lnAddressPrimedFactory = next.factoryHandle
+            lnAddressStateOwner.refresh(next.factoryHandle)
+        }
     }
 
     fun refresh() {
