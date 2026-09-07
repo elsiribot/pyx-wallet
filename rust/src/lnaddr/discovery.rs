@@ -116,9 +116,12 @@ fn configured_default_server() -> (&'static str, &'static str) {
 /// The always-present built-in entry: known to be free, and to support both
 /// required capabilities, without needing a relay announcement at all.
 fn default_server() -> DiscoveredServer {
-    let (origin, domain) = configured_default_server();
+    let domain = default_server_domain();
     DiscoveredServer {
-        origin: origin.to_string(),
+        // Canonical (slash-trimmed) origin, exactly as an announced one would
+        // be — nothing downstream should have to care where an origin came
+        // from before interpolating it into a request URL.
+        origin: default_server_origin().to_string(),
         name: domain.to_string(),
         domains: vec![domain.to_string()],
         nostr_auth: true,
@@ -162,10 +165,17 @@ pub(crate) fn is_public_domain(domain: &str) -> bool {
 }
 
 /// The origin of the wallet's built-in server (see
-/// [`configured_default_server`]). Used by recovery, which only ever queries
-/// this origin plus origins the user has already claimed against.
+/// [`configured_default_server`]), canonicalized the same way
+/// [`normalize_origin`] canonicalizes an announced one. Used by recovery,
+/// which only ever queries this origin plus origins the user has already
+/// claimed against.
+///
+/// The trim is not decoration: the shipped constant has no trailing slash,
+/// but a debug build's `PYX_LNADDR_DEBUG_ORIGIN` could, and a trailing slash
+/// here would break every request to the default server (see
+/// [`normalize_origin`]).
 pub(crate) fn default_server_origin() -> &'static str {
-    configured_default_server().0
+    configured_default_server().0.trim_end_matches('/')
 }
 
 /// The domain of the wallet's built-in server (see
@@ -187,10 +197,31 @@ pub(crate) fn default_server_domain() -> &'static str {
 /// only in a build that already carries it.
 pub(crate) fn is_allowed_origin(origin: &str) -> bool {
     #[cfg(feature = "lnaddr-debug-server")]
-    if origin == configured_default_server().0 {
+    if origin == default_server_origin() {
         return true;
     }
     is_valid_origin(origin)
+}
+
+/// The **single accept-and-canonicalize boundary** for origins: returns the
+/// canonical form of `origin` — no trailing slash — if [`is_allowed_origin`]
+/// accepts it, and `None` otherwise. Everything that stores or uses an origin
+/// must go through this rather than through `is_allowed_origin` directly.
+///
+/// The trailing slash matters because every request is built as
+/// `format!("{origin}/api/v1/...")` with no further normalization. An origin
+/// of `https://pay.example.com/` would produce
+/// `https://pay.example.com//api/v1/register` — and since lnaddrd derives the
+/// `u` tag it expects from its own *normalized* origin, the NIP-98 check would
+/// fail on every single request to that server. That surfaces as
+/// "unauthorized — check your device clock" for claim, list, update and
+/// remove alike, which in particular makes any address already held there
+/// impossible to release. Doc 02 requires producers to announce a normalized
+/// origin, but a server that gets it wrong must not be able to brick itself
+/// for our users.
+pub(crate) fn normalize_origin(origin: &str) -> Option<String> {
+    let trimmed = origin.trim_end_matches('/');
+    is_allowed_origin(trimmed).then(|| trimmed.to_string())
 }
 
 /// `origin` must be a bare `https://` URL (no path/query/fragment) whose
@@ -350,7 +381,7 @@ pub(crate) fn parse_announcement(event: &Value) -> Option<DiscoveredServer> {
         return None;
     }
 
-    let origin = content.get("origin")?.as_str()?.to_string();
+    let announced_origin = content.get("origin")?.as_str()?.to_string();
     let registration_url = content.get("registration_url")?.as_str()?.to_string();
     let domains: Vec<String> = content
         .get("domains")?
@@ -365,13 +396,22 @@ pub(crate) fn parse_announcement(event: &Value) -> Option<DiscoveredServer> {
         .map(Value::as_str)
         .collect::<Option<Vec<_>>>()?;
 
-    if !is_valid_origin(&origin) {
-        return None;
-    }
-    let expected_d_tag = format!("{D_TAG_PREFIX}{origin}");
-    let has_matching_d_tag = tags.iter().any(|tag| {
-        let tag = tag.as_array();
-        tag.is_some_and(|t| t.len() >= 2 && t[0] == "d" && t[1] == expected_d_tag.as_str())
+    // Canonicalize once, here: everything downstream (the `d` tag check, the
+    // deduplication key, and — via DiscoveredServer.origin — every request
+    // URL the wallet ever builds) uses the normalized form.
+    let origin = normalize_origin(&announced_origin)?;
+
+    // Doc 02 defines the `d` value over the *normalized* origin, which is the
+    // form checked first. A producer that announced a trailing slash and used
+    // that same raw string in its `d` tag is still accepted — the two differ
+    // only by trailing slashes, so this cannot let anyone address an origin
+    // that is not theirs — but the normalized origin is what gets used.
+    let has_matching_d_tag = [&origin, &announced_origin].iter().any(|candidate| {
+        let expected = format!("{D_TAG_PREFIX}{candidate}");
+        tags.iter().any(|tag| {
+            let tag = tag.as_array();
+            tag.is_some_and(|t| t.len() >= 2 && t[0] == "d" && t[1] == expected.as_str())
+        })
     });
     if !has_matching_d_tag {
         return None;
@@ -514,7 +554,7 @@ pub(crate) async fn discover(relays: &[&str]) -> Vec<DiscoveredServer> {
     let results = futures_util::future::join_all(queries).await;
     let events: Vec<Value> = results.into_iter().flatten().collect();
 
-    let built_in_origin = configured_default_server().0;
+    let built_in_origin = default_server_origin();
     let mut servers = merge(&events);
     servers.retain(|server| server.origin != built_in_origin);
 
@@ -681,6 +721,100 @@ mod tests {
             !is_valid_origin("https://PAY.example.com"),
             "a non-canonical host would sign a `u` tag the server sees differently"
         );
+    }
+
+    /// Requests are built as `format!("{origin}/api/v1/...")`, so an origin
+    /// that keeps its trailing slash yields a double-slash URL. lnaddrd
+    /// derives the `u` tag it expects from its own normalized origin, so
+    /// every NIP-98 request to such a server would fail — and an address
+    /// already held there could never be released. The accept boundary
+    /// therefore canonicalizes rather than merely validating.
+    #[test]
+    fn normalize_origin_strips_trailing_slashes() {
+        assert_eq!(
+            normalize_origin("https://pay.example.com/").as_deref(),
+            Some("https://pay.example.com")
+        );
+        assert_eq!(
+            normalize_origin("https://pay.example.com//").as_deref(),
+            Some("https://pay.example.com")
+        );
+        assert_eq!(
+            normalize_origin("https://pay.example.com").as_deref(),
+            Some("https://pay.example.com")
+        );
+        assert_eq!(
+            normalize_origin("https://pay.example.com:8443/").as_deref(),
+            Some("https://pay.example.com:8443")
+        );
+
+        // Canonicalizing a trailing slash must not smuggle anything else past
+        // the gate.
+        assert_eq!(normalize_origin("http://pay.example.com/"), None);
+        assert_eq!(normalize_origin("https://pay.example.com/api/"), None);
+        assert_eq!(normalize_origin("https://localhost/"), None);
+        assert_eq!(normalize_origin("  https://pay.example.com/"), None);
+        assert_eq!(normalize_origin("/"), None);
+    }
+
+    /// End-to-end for the same rule: a server that announces itself with a
+    /// trailing slash is still usable, and the origin the wallet keeps — the
+    /// one every request URL is built from — is the single-slash form.
+    #[test]
+    fn announced_trailing_slash_origin_is_canonicalized() {
+        let keypair = test_keypair();
+        let mut content = valid_content();
+        content["origin"] = json!("https://pay.example.com/");
+        // `d` tag on the raw announced string, which is what a producer that
+        // got the normalization wrong would actually publish.
+        let event = make_announcement_with_tags(
+            &keypair,
+            &content,
+            1_750_000_000,
+            vec![
+                json!(["d", format!("{D_TAG_PREFIX}https://pay.example.com/")]),
+                json!(["t", SERVICE_TAG]),
+            ],
+        );
+
+        let server = parse_announcement(&event).expect("a trailing slash must not be fatal");
+
+        assert_eq!(server.origin, "https://pay.example.com");
+        assert_eq!(
+            format!("{}/api/v1/register", server.origin),
+            "https://pay.example.com/api/v1/register",
+            "request URLs must carry exactly one slash"
+        );
+    }
+
+    /// The same announcement with a doc-02-conforming (normalized) `d` tag
+    /// also parses, and dedupes against the raw-`d`-tag variant rather than
+    /// showing up as a second server.
+    #[test]
+    fn trailing_slash_origin_dedupes_against_its_canonical_form() {
+        let keypair = test_keypair();
+        let mut slashed = valid_content();
+        slashed["origin"] = json!("https://pay.example.com/");
+        slashed["name"] = json!("Slashed");
+        let slashed_event = make_announcement_with_tags(
+            &keypair,
+            &slashed,
+            1_750_000_000,
+            vec![
+                json!(["d", format!("{D_TAG_PREFIX}https://pay.example.com")]),
+                json!(["t", SERVICE_TAG]),
+            ],
+        );
+        let clean_event = make_announcement(&keypair, &valid_content(), 1_750_000_500);
+
+        let servers = merge(&[slashed_event, clean_event]);
+
+        assert_eq!(
+            servers.len(),
+            1,
+            "both events describe the same origin: {servers:?}"
+        );
+        assert_eq!(servers[0].origin, "https://pay.example.com");
     }
 
     /// The built-in server must pass the same gate every other origin does.

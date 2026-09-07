@@ -23,7 +23,8 @@ use serde_json::{Value, json};
 use crate::client::ConduitClient;
 use crate::factory::ConduitClientFactory;
 use crate::lnaddr::{
-    DEFAULT_RELAYS, DiscoveredServer, LnAddressRecord, QuoteResult, discover, is_allowed_origin,
+    DEFAULT_RELAYS, DiscoveredServer, LnAddressRecord, QuoteResult, discover, is_valid_domain,
+    is_valid_username, normalize_origin,
 };
 
 use super::bootstrap;
@@ -64,7 +65,10 @@ pub(crate) async fn quote_async(
     domain: String,
     username: String,
 ) -> Result<String, AndroidError> {
-    validate_origin(&origin)?;
+    // Shadowed with the canonical form: request URLs are built by
+    // interpolation, so the origin that reaches the API client must already be
+    // trailing-slash-free.
+    let origin = validate_origin(&origin)?;
     validate_domain(&domain)?;
     validate_username(&username)?;
     let factory = factory(factory_handle)?;
@@ -82,7 +86,9 @@ pub(crate) async fn claim_async(
     domain: String,
     username: String,
 ) -> Result<String, AndroidError> {
-    validate_origin(&origin)?;
+    // See quote_async: the canonical origin is what gets stored on the record
+    // and reused by every later update/release call.
+    let origin = validate_origin(&origin)?;
     validate_domain(&domain)?;
     validate_username(&username)?;
     // Resolve the client, its federation id, and the service before the
@@ -262,32 +268,40 @@ fn quote_json(result: &QuoteResult) -> Value {
 }
 
 /// `origin` is interpolated straight into request URLs and is what the wallet
-/// signs a NIP-98 event for, so the bridge holds it to exactly the rule
-/// announcement parsing uses ([`crate::lnaddr::is_allowed_origin`]): a bare
-/// `https://` origin on a public registrable host, with no path, query or
-/// fragment. The byte cap stays as a cheap pre-filter so a pathological input
-/// never reaches the URL parser.
+/// signs a NIP-98 event for, so the bridge goes through the same
+/// accept-and-canonicalize boundary announcement parsing uses
+/// ([`crate::lnaddr::normalize_origin`]): a bare `https://` origin on a public
+/// registrable host with no path, query or fragment, returned **without a
+/// trailing slash** so `format!("{origin}/api/v1/...")` can never produce a
+/// double slash. The byte cap stays as a cheap pre-filter so a pathological
+/// input never reaches the URL parser.
 ///
-/// Under the non-default `lnaddr-debug-server` feature `is_allowed_origin`
+/// Under the non-default `lnaddr-debug-server` feature `normalize_origin`
 /// additionally admits the compiled-in loopback debug origin, keeping the
 /// documented end-to-end smoke build working; release builds cannot enable
 /// that feature.
-fn validate_origin(origin: &str) -> Result<(), AndroidError> {
-    if origin.is_empty() || origin.len() > MAX_ORIGIN_BYTES || !is_allowed_origin(origin) {
+fn validate_origin(origin: &str) -> Result<String, AndroidError> {
+    if origin.is_empty() || origin.len() > MAX_ORIGIN_BYTES {
         return Err(invalid_lnaddr());
     }
-    Ok(())
+    normalize_origin(origin).ok_or_else(invalid_lnaddr)
 }
 
+/// Reuses the service layer's own predicate rather than a length-only check,
+/// so the bridge, the store and Kotlin's `sanitizeUsername` all agree on what
+/// a domain is. `MAX_DOMAIN_BYTES` is kept as a pre-filter and is also the cap
+/// `is_valid_domain` enforces.
 fn validate_domain(domain: &str) -> Result<(), AndroidError> {
-    if domain.is_empty() || domain.len() > MAX_DOMAIN_BYTES {
+    if domain.is_empty() || domain.len() > MAX_DOMAIN_BYTES || !is_valid_domain(domain) {
         return Err(invalid_lnaddr());
     }
     Ok(())
 }
 
+/// See [`validate_domain`]: the same predicate the service layer applies to
+/// server-supplied names, applied here to caller-supplied ones.
 fn validate_username(username: &str) -> Result<(), AndroidError> {
-    if username.is_empty() || username.len() > MAX_USERNAME_BYTES {
+    if username.is_empty() || username.len() > MAX_USERNAME_BYTES || !is_valid_username(username) {
         return Err(invalid_lnaddr());
     }
     Ok(())
@@ -428,8 +442,10 @@ mod tests {
     /// raw into the request URL that the NIP-98 `u` tag then commits to.
     #[test]
     fn origin_validation_matches_the_announcement_rule() {
-        assert!(validate_origin("https://pay.example.com").is_ok());
-        assert!(validate_origin("https://pay.example.com/").is_ok());
+        assert_eq!(
+            validate_origin("https://pay.example.com").unwrap(),
+            "https://pay.example.com"
+        );
 
         for rejected in [
             "http://pay.example.com",
@@ -447,6 +463,51 @@ mod tests {
                 validate_origin(rejected).is_err(),
                 "{rejected:?} must not reach the signing path"
             );
+        }
+    }
+
+    /// Requests are built as `format!("{origin}/api/v1/...")`. An origin that
+    /// kept its trailing slash would yield `//api/v1/...`, and since lnaddrd
+    /// derives the `u` tag it expects from its own normalized origin, every
+    /// NIP-98 request to that server would fail — including the release that
+    /// would let the user get rid of the address. The bridge therefore
+    /// canonicalizes at the accept boundary rather than merely validating.
+    #[test]
+    fn origin_validation_canonicalizes_trailing_slashes() {
+        for input in [
+            "https://pay.example.com",
+            "https://pay.example.com/",
+            "https://pay.example.com//",
+        ] {
+            let canonical = validate_origin(input).expect("all three name the same origin");
+            assert_eq!(canonical, "https://pay.example.com");
+            assert_eq!(
+                format!("{canonical}/api/v1/register"),
+                "https://pay.example.com/api/v1/register"
+            );
+        }
+    }
+
+    /// The bridge applies the service layer's own predicates, not a
+    /// length-only check, so Kotlin's `sanitizeUsername`, the bridge and the
+    /// store cannot drift apart on what a name or a domain is.
+    #[test]
+    fn domain_and_username_validation_reuse_the_service_predicates() {
+        assert!(validate_domain("example.com").is_ok());
+        for rejected in [
+            "",
+            "localhost",
+            "single-label",
+            "evil.example",
+            "EXAMPLE.com",
+        ] {
+            assert!(validate_domain(rejected).is_err(), "{rejected:?}");
+        }
+
+        assert!(validate_username("alice").is_ok());
+        assert!(validate_username("a-b_c.d1").is_ok());
+        for rejected in ["", "Alice", "eve smith", "bob!", "üser"] {
+            assert!(validate_username(rejected).is_err(), "{rejected:?}");
         }
     }
 

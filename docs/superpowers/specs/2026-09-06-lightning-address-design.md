@@ -68,7 +68,18 @@ second would be rejected as a replay.
 Every origin the wallet signs a request for — whether from an
 announcement, the default entry, or the JNI bridge — must be a bare,
 canonical `https://` origin on a public registrable host with no path,
-query or fragment.
+query or fragment. Origins are canonicalized (trailing slashes trimmed)
+at the point they are accepted, not where they are used: request URLs
+are built as `<origin>/api/v1/...` by interpolation, and lnaddrd derives
+the `u` tag it expects from its own normalized origin, so a stored
+`https://host/` would fail NIP-98 verification on *every* call to that
+server — including the release that would let the user get rid of an
+address held there.
+
+Domains and usernames are held to one definition across all three
+layers: Kotlin sanitizes to it, the JNI bridge validates against it, and
+the service applies it to server-supplied records (public registrable
+domain ≤253 bytes; username ≤64 bytes of lowercase `a-z0-9-_.`).
 
 | Action | Endpoint | Auth |
 |---|---|---|

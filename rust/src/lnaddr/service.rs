@@ -45,11 +45,15 @@ pub(crate) struct LnAddressService<T: HttpTransport> {
     keypair: Keypair,
 }
 
-/// Whether a server-supplied `username` is one this wallet is willing to
-/// persist: lnaddrd's own rule (non-empty, at most 64 bytes, lowercase ASCII
+/// Whether a `username` is one this wallet is willing to persist or send:
+/// lnaddrd's own rule (non-empty, at most 64 bytes, lowercase ASCII
 /// `a-z0-9`, `-`, `_`, `.`), which is also exactly what the claim path can
 /// produce (the claim sheet sanitizes to the same character set).
-fn is_valid_username(username: &str) -> bool {
+///
+/// Shared by recovery (server-supplied names) and by the JNI boundary
+/// (caller-supplied names), so all three layers — Kotlin's `sanitizeUsername`,
+/// the bridge, and the store — agree on one definition.
+pub(crate) fn is_valid_username(username: &str) -> bool {
     !username.is_empty()
         && username.len() <= MAX_USERNAME_BYTES
         && username.bytes().all(|byte| {
@@ -57,12 +61,15 @@ fn is_valid_username(username: &str) -> bool {
         })
 }
 
-/// Whether a server-supplied `domain` is one this wallet is willing to
-/// persist: the same public-registrable-domain rule the claim path's
-/// announcements are held to, plus RFC 1035's length cap. The built-in
-/// server's own domain is always accepted — under the `lnaddr-debug-server`
-/// feature it is deliberately a non-public one.
-fn is_valid_recovered_domain(domain: &str) -> bool {
+/// Whether a `domain` is one this wallet is willing to persist or send: the
+/// same public-registrable-domain rule announcements are held to, plus
+/// RFC 1035's length cap. The built-in server's own domain is always accepted
+/// — under the `lnaddr-debug-server` feature it is deliberately a non-public
+/// one.
+///
+/// Shared by recovery and by the JNI boundary, for the same reason as
+/// [`is_valid_username`].
+pub(crate) fn is_valid_domain(domain: &str) -> bool {
     domain.len() <= MAX_DOMAIN_BYTES
         && (is_public_domain(domain) || domain == default_server_domain())
 }
@@ -312,9 +319,7 @@ impl<T: HttpTransport> LnAddressService<T> {
                 // display string impersonates another address (or whose
                 // domain/username the rest of the wallet never expected to
                 // see) into the local store.
-                if !is_valid_recovered_domain(&address.domain)
-                    || !is_valid_username(&address.username)
-                {
+                if !is_valid_domain(&address.domain) || !is_valid_username(&address.username) {
                     continue;
                 }
 
@@ -367,6 +372,7 @@ mod tests {
     use fedimint_core::db::mem_impl::MemDatabase;
 
     use super::*;
+    use crate::lnaddr::normalize_origin;
 
     const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon \
          abandon abandon abandon about";
@@ -542,6 +548,36 @@ mod tests {
         let stored = svc.snapshot().await;
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].username, "alice");
+    }
+
+    /// Origins reach the service already canonical (see
+    /// `discovery::normalize_origin`, applied by both announcement parsing
+    /// and the JNI bridge), so the URLs the service builds by interpolation
+    /// carry exactly one slash. Pins the shape the NIP-98 `u` tag commits to.
+    #[tokio::test]
+    async fn request_urls_carry_exactly_one_slash_after_the_origin() {
+        let transport = Arc::new(FakeTransport::new(
+            200,
+            r#"{"address":"alice@example.com","management_token":null,"active":true}"#,
+        ));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
+
+        let origin = normalize_origin("https://pay.example.com/")
+            .expect("a trailing-slash origin is accepted, canonicalized");
+        svc.claim(
+            &origin,
+            "example.com",
+            "alice",
+            FederationId::dummy(),
+            "LNURL1DUMMY".to_string(),
+        )
+        .await
+        .expect("claim should succeed");
+
+        assert_eq!(
+            transport.last_request().1,
+            "https://pay.example.com/api/v1/register"
+        );
     }
 
     #[tokio::test]
