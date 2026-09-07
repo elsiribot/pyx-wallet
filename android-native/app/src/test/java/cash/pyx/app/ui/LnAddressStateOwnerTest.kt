@@ -295,6 +295,103 @@ class LnAddressStateOwnerTest {
         assertTrue(owner.state.value.message!!.lowercase().contains("clock"))
     }
 
+    /**
+     * The screen used to fire `refresh` and `recover` concurrently. A refresh clears
+     * [LnAddressState.message] both when it starts and when its snapshot succeeds, so the
+     * refresh landing after a recover failure erased the message `recover` is contractually
+     * required to keep visible. `prime` sequences them, so the recover failure has the last
+     * word.
+     */
+    @Test fun `prime keeps a recover failure message visible after the refresh completes`() = runTest {
+        val api = FakeLnaddrApi()
+        api.recoverResult = NativeResult.Failure(AndroidError("unauthorized", "unauthorized: expired signature", false))
+        val owner = LnAddressStateOwner(api, backgroundScope)
+
+        owner.prime(1)
+        runCurrent()
+        // The refresh runs first and must complete before recover is even attempted.
+        assertEquals(0, api.recoverCalls)
+        api.succeedSnapshot(address("alice"))
+        api.succeedDiscovery(server("primal.net"))
+        runCurrent()
+
+        assertEquals(1, api.recoverCalls)
+        assertEquals(1, api.snapshotCallCount)
+        assertTrue(owner.state.value.message!!.lowercase().contains("clock"))
+        assertEquals(listOf("alice"), owner.state.value.addresses.map(LnAddress::username))
+    }
+
+    @Test fun `prime refreshes again once recovery succeeds`() = runTest {
+        val api = FakeLnaddrApi()
+        api.recoverResult = NativeResult.Success(LnaddrRecovery(1))
+        val owner = LnAddressStateOwner(api, backgroundScope)
+
+        owner.prime(1)
+        runCurrent()
+        api.succeedSnapshot()
+        api.succeedDiscovery(server("primal.net"))
+        runCurrent()
+
+        assertEquals(2, api.snapshotCallCount)
+        api.succeedSnapshot(address("alice"))
+        api.succeedDiscovery(server("primal.net"))
+        runCurrent()
+
+        assertEquals(listOf("alice"), owner.state.value.addresses.map(LnAddress::username))
+        assertNull(owner.state.value.message)
+    }
+
+    /** Spec: "discovery failure → default server only". Without a fallback the claim sheet
+     * skipped its domain selector entirely, leaving nothing selectable and the CTA disabled
+     * forever with no explanation. */
+    @Test fun `a discovery failure with no previous servers falls back to the built-in default`() = runTest {
+        val api = FakeLnaddrApi()
+        val owner = LnAddressStateOwner(api, backgroundScope)
+
+        owner.refresh(1)
+        runCurrent()
+        api.succeedSnapshot()
+        api.failDiscovery("discovery offline")
+        runCurrent()
+
+        assertEquals(listOf(LnAddressStateOwner.DEFAULT_SERVER), owner.state.value.servers)
+        assertFalse(owner.state.value.loading)
+    }
+
+    @Test fun `a thrown discovery call also falls back to the built-in default`() = runTest {
+        val api = FakeLnaddrApi()
+        api.throwOnDiscovery = true
+        val owner = LnAddressStateOwner(api, backgroundScope)
+
+        owner.refresh(1)
+        runCurrent()
+        api.succeedSnapshot()
+        runCurrent()
+
+        assertEquals(listOf(LnAddressStateOwner.DEFAULT_SERVER), owner.state.value.servers)
+        assertFalse(owner.state.value.loading)
+    }
+
+    /** `LnaddrMutation.ok` was parsed and then ignored, so `{"ok": false}` refreshed as though
+     * the mutation had happened and presented the unchanged state as the new truth. */
+    @Test fun `a mutation the server rejected does not refresh`() = runTest {
+        val api = FakeLnaddrApi()
+        api.releaseResult = NativeResult.Success(LnaddrMutation(false))
+        val owner = LnAddressStateOwner(api, backgroundScope)
+        owner.refresh(1)
+        runCurrent()
+        api.succeedSnapshot(address("alice"))
+        api.succeedDiscovery(server("primal.net"))
+        runCurrent()
+
+        owner.release(1, owner.state.value.addresses.single())
+        runCurrent()
+
+        assertEquals(1, api.snapshotCallCount)
+        assertTrue(owner.state.value.message!!.isNotBlank())
+        assertEquals(listOf("alice"), owner.state.value.addresses.map(LnAddress::username))
+    }
+
     private fun address(
         username: String,
         federationId: String? = "fed-a",
@@ -340,8 +437,13 @@ class LnAddressStateOwnerTest {
             snapshotCallCount++
             return suspendCoroutine { snapshotCalls += it }
         }
+        /** Makes `lnaddrDiscoverAsync` throw rather than answer, standing in for the JNI call
+         * failing outright instead of returning a `NativeResult.Failure`. */
+        var throwOnDiscovery = false
+
         override suspend fun lnaddrDiscoverAsync(factoryHandle: Long): NativeResult<LnaddrDiscovery> {
             discoveryCallCount++
+            if (throwOnDiscovery) throw IllegalStateException("discovery bridge unavailable")
             return suspendCoroutine { discoveryCalls += it }
         }
         override suspend fun lnaddrClaimAsync(clientHandle: Long, origin: String, domain: String, username: String): NativeResult<LnAddress> {

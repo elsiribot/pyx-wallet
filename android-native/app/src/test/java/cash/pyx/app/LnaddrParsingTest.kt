@@ -3,6 +3,8 @@ package cash.pyx.app
 import cash.pyx.app.nativeapi.JniNativeWalletApi
 import cash.pyx.app.nativeapi.LnaddrQuote
 import cash.pyx.app.nativeapi.NativeResult
+import cash.pyx.app.ui.ClaimCheck
+import cash.pyx.app.ui.LnaddrClaimPresentation
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -205,6 +207,24 @@ class LnaddrParsingTest {
         })
         val result = (api.lnaddrQuoteAsync(1, "o", "d", "u") as NativeResult.Success).value as LnaddrQuote.Invalid
         assertEquals("bad_domain", result.reason)
+    }
+
+    /** The bridge folds `invalid_input`, `unsupported_domain` and `length_disabled` into the
+     * single `invalid` state, so the reason code is the only thing separating three spec'd,
+     * separately-rendered claim-sheet errors. It has to survive the JSON boundary and reach
+     * the presentation layer as distinct, non-empty text. */
+    @Test fun `each spec'd invalid reason survives the bridge and renders distinctly`() = runTest {
+        val rendered = listOf("invalid_input", "unsupported_domain", "length_disabled").map { code ->
+            val api = JniNativeWalletApi(libraryLoader = {}, lnaddrQuoteAsyncBinding = { _, _, _, _, callback ->
+                callback.onSuccess(21, """{"priceMsat":null,"reason":"$code","state":"invalid"}"""); 21
+            })
+            val quote = (api.lnaddrQuoteAsync(1, "o", "d", "u") as NativeResult.Success).value
+            assertEquals(code, (quote as LnaddrQuote.Invalid).reason)
+            (LnaddrClaimPresentation.checkFromQuote(quote) as ClaimCheck.Error).hint
+        }
+
+        rendered.forEach { assertTrue(it.isNotBlank()) }
+        assertEquals(3, rendered.distinct().size)
     }
 
     @Test fun `quote with an unknown state is rejected`() = runTest {

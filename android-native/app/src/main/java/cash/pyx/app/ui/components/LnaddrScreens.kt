@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cash.pyx.app.nativeapi.FederationSummary
 import cash.pyx.app.nativeapi.LnAddress
+import cash.pyx.app.ui.ConfirmationActionGate
 import cash.pyx.app.ui.LnAddressStateOwner
 import cash.pyx.app.ui.QrPayload
 import cash.pyx.app.ui.WalletModalRoute
@@ -76,14 +77,16 @@ fun LnaddrListContent(
     var selectedAddress by remember { mutableStateOf<LnAddress?>(null) }
     var releaseTarget by remember { mutableStateOf<LnAddress?>(null) }
     var modalRoute by remember { mutableStateOf<WalletModalRoute?>(null) }
+    // Release is irreversible and the dialog stays composed for a frame after the click, so a
+    // fast double-tap dispatched it twice. Same gate the on-chain ADDRESS_MUTATION modal uses.
+    val releaseGate = remember { ConfirmationActionGate() }
 
-    // The claim sheet populates its own domain list from `owner.state.servers`, which this
-    // refresh discovers; recover is idempotent, so running it unconditionally on every visit
-    // costs nothing and picks up addresses claimed from another device.
-    LaunchedEffect(factoryHandle) {
-        owner.refresh(factoryHandle)
-        owner.recover(factoryHandle)
-    }
+    // The claim sheet populates its own domain list from `owner.state.servers`, which the
+    // refresh inside `prime` discovers; recover is idempotent, so running it unconditionally
+    // on every visit costs nothing and picks up addresses claimed from another device.
+    // `prime` sequences the two — fired concurrently, the refresh's message reset raced the
+    // recover failure's message and could erase it.
+    LaunchedEffect(factoryHandle) { owner.prime(factoryHandle) }
 
     Column(
         Modifier
@@ -172,22 +175,26 @@ fun LnaddrListContent(
             onMakePrimary = { owner.setPrimary(factoryHandle, address); selectedAddress = null },
             onAssign = { clientHandle?.let { owner.repoint(it, factoryHandle, address) }; selectedAddress = null },
             onReleaseRequested = {
-                releaseTarget = address
-                selectedAddress = null
-                modalRoute = WalletModalRoute.LNADDR_RELEASE
+                if (releaseGate.request { owner.release(factoryHandle, address) }) {
+                    releaseTarget = address
+                    selectedAddress = null
+                    modalRoute = WalletModalRoute.LNADDR_RELEASE
+                }
             },
         )
     }
 
     val release = releaseTarget
     if (modalRoute == WalletModalRoute.LNADDR_RELEASE && release != null) AlertDialog(
-        onDismissRequest = { modalRoute = null; releaseTarget = null },
+        onDismissRequest = { releaseGate.cancel(); modalRoute = null; releaseTarget = null },
         title = { Text("Release address?") },
         text = { Text("Release ${release.display}? Anyone will be able to claim it.") },
         confirmButton = {
-            Button(onClick = { owner.release(factoryHandle, release); modalRoute = null; releaseTarget = null }) { Text("Release") }
+            // confirm() consumes the single pending action, so a double-tap on Release
+            // dispatches once — the second call finds nothing pending and is a no-op.
+            Button(onClick = { modalRoute = null; releaseTarget = null; releaseGate.confirm() }) { Text("Release") }
         },
-        dismissButton = { TextButton(onClick = { modalRoute = null; releaseTarget = null }) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = { releaseGate.cancel(); modalRoute = null; releaseTarget = null }) { Text("Cancel") } },
     )
 }
 

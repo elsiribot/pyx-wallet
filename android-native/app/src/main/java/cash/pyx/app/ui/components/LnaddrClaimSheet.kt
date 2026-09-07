@@ -34,15 +34,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cash.pyx.app.ui.ClaimCheck
 import cash.pyx.app.ui.LnAddressStateOwner
 import cash.pyx.app.ui.LnaddrClaimPresentation
+import cash.pyx.app.ui.LnaddrDomainOption
 import cash.pyx.app.ui.theme.PyxBorder
 import cash.pyx.app.ui.theme.PyxFaint
 import cash.pyx.app.ui.theme.PyxGreen
@@ -74,14 +79,16 @@ fun LnaddrClaimSheet(
     initialUsername: String = "",
 ) {
     val state by owner.state.collectAsStateWithLifecycle()
-    val domainPairs = remember(state.servers) {
-        state.servers.flatMap { server -> server.domains.map { domain -> server.origin to domain } }
-    }
-    var selected by remember(domainPairs) {
-        mutableStateOf(domainPairs.firstOrNull { (_, domain) -> domain == "pyx.cash" } ?: domainPairs.firstOrNull())
-    }
-    var rawUsername by remember { mutableStateOf(initialUsername) }
-    val username = remember(rawUsername) { LnaddrClaimPresentation.sanitizeUsername(rawUsername) }
+    val options = remember(state.servers) { LnaddrClaimPresentation.domainOptions(state.servers) }
+    // First option, not "the one whose domain reads pyx.cash": domains in an announcement are
+    // not bound to the announcing origin, so matching on the name would let a hostile server
+    // that advertises `pyx.cash` become the pre-selected default. Rust's discover() always
+    // emits the built-in server first.
+    var selected by remember(options) { mutableStateOf(options.firstOrNull()) }
+    // Single source of truth for the name: what is claimed is what is shown. Sanitizing on the
+    // way in (rather than displaying the raw text and claiming a sanitized copy) means typing
+    // `Eric!` can no longer display `Eric!` while claiming `eric`.
+    var username by remember { mutableStateOf(LnaddrClaimPresentation.sanitizeUsername(initialUsername)) }
     var check by remember { mutableStateOf<ClaimCheck>(ClaimCheck.Idle) }
     var claiming by remember { mutableStateOf(false) }
     val currentOwner by rememberUpdatedState(owner)
@@ -92,14 +99,14 @@ fun LnaddrClaimSheet(
     // invoice generation (PyxApp.kt's `ReceiveContent`): the check goes to `Checking`
     // immediately so the status line never looks stale while the request is pending.
     LaunchedEffect(username, selected) {
-        val (origin, domain) = selected ?: run { check = ClaimCheck.Idle; return@LaunchedEffect }
+        val option = selected ?: run { check = ClaimCheck.Idle; return@LaunchedEffect }
         if (username.isBlank()) {
             check = ClaimCheck.Idle
             return@LaunchedEffect
         }
         check = ClaimCheck.Checking
         delay(1000)
-        check = currentOwner.quote(factoryHandle, origin, domain, username)
+        check = currentOwner.quote(factoryHandle, option.origin, option.domain, username)
     }
 
     PyxSheet(onDismiss = onDismiss, modifier = Modifier.testTag("lnaddr_claim_sheet")) {
@@ -118,8 +125,8 @@ fun LnaddrClaimSheet(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
             )
-            if (domainPairs.isNotEmpty()) {
-                DomainSelector(domainPairs, selected) { selected = it }
+            if (options.isNotEmpty()) {
+                DomainSelector(options, selected) { selected = it }
                 Spacer(Modifier.height(20.dp))
             }
             // Username field: mono input style matching the receive amount field, with the
@@ -138,7 +145,7 @@ fun LnaddrClaimSheet(
                 // address instead of being separated by a gap the length of the field's minimum.
                 Box(Modifier.weight(1f, fill = false)) {
                     Text(
-                        rawUsername.ifEmpty { "username" },
+                        username.ifEmpty { "username" },
                         style = PyxType.inputMono,
                         color = Color.Transparent,
                         maxLines = 1,
@@ -148,8 +155,8 @@ fun LnaddrClaimSheet(
                         modifier = Modifier.padding(end = 2.dp).clearAndSetSemantics {},
                     )
                     BasicTextField(
-                        value = rawUsername,
-                        onValueChange = { rawUsername = it.take(64) },
+                        value = username,
+                        onValueChange = { username = LnaddrClaimPresentation.sanitizeUsername(it) },
                         modifier = Modifier.matchParentSize().testTag("lnaddr_username"),
                         textStyle = PyxType.inputMono.copy(color = PyxText),
                         cursorBrush = SolidColor(PyxOrange),
@@ -157,36 +164,36 @@ fun LnaddrClaimSheet(
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                         decorationBox = { inner ->
                             Box {
-                                if (rawUsername.isEmpty()) Text("username", style = PyxType.inputMono, color = PyxFaint)
+                                if (username.isEmpty()) Text("username", style = PyxType.inputMono, color = PyxFaint)
                                 inner()
                             }
                         },
                     )
                 }
-                selected?.let { (_, domain) ->
-                    Text("@$domain", style = PyxType.inputMono, color = PyxMuted)
+                selected?.let {
+                    Text("@${it.domain}", style = PyxType.inputMono, color = PyxMuted)
                 }
             }
             Spacer(Modifier.height(14.dp))
             StatusLine(check)
             Spacer(Modifier.height(20.dp))
-            val domain = selected?.second
+            val option = selected
             PyxPrimaryButton(
                 text = when {
                     claiming -> "Claiming…"
-                    domain != null && username.isNotBlank() -> "Claim $username@$domain"
+                    option != null && username.isNotBlank() -> "Claim $username@${option.domain}"
                     else -> "Claim name"
                 },
                 onClick = {
-                    val (origin, d) = selected ?: return@PyxPrimaryButton
+                    val chosen = selected ?: return@PyxPrimaryButton
                     claiming = true
-                    currentOwner.claim(clientHandle, factoryHandle, origin, d, username) { done ->
+                    currentOwner.claim(clientHandle, factoryHandle, chosen.origin, chosen.domain, username) { done ->
                         claiming = false
                         if (done) onDismiss()
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !claiming && domain != null && LnaddrClaimPresentation.canClaim(check, username),
+                enabled = !claiming && option != null && LnaddrClaimPresentation.canClaim(check, username),
             )
             state.message?.let {
                 Text(
@@ -195,9 +202,11 @@ fun LnaddrClaimSheet(
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 )
             }
-            domain?.let {
+            // "Hosted by" names the *server*, not the domain: they are frequently different,
+            // and a hostile announcement can offer a domain it does not own.
+            option?.let {
                 Text(
-                    "Hosted by $it · you can release it anytime",
+                    "Hosted by ${LnaddrClaimPresentation.originHost(it.origin)} · you can release it anytime",
                     style = PyxType.rowSub, color = PyxFaint,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
@@ -229,56 +238,90 @@ private fun StatusLine(check: ClaimCheck) {
 }
 
 /** Chip row for up to 3 domains; a scrollable checklist (CurrencyPickerSheet's row style)
- * beyond that, since a wrapping chip row stops reading well past a handful of options. */
+ * beyond that, since a wrapping chip row stops reading well past a handful of options.
+ *
+ * Each option that needs it (see [LnaddrDomainOption.originLabel]) also names the server that
+ * would host the address, so two chips reading `pyx.cash` — one genuine, one from an
+ * announcement that merely claims the name — can be told apart. */
 @Composable
 private fun DomainSelector(
-    pairs: List<Pair<String, String>>,
-    selected: Pair<String, String>?,
-    onSelect: (Pair<String, String>) -> Unit,
+    options: List<LnaddrDomainOption>,
+    selected: LnaddrDomainOption?,
+    onSelect: (LnaddrDomainOption) -> Unit,
 ) {
-    if (pairs.size <= 3) {
+    if (options.size <= 3) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            pairs.forEach { pair ->
-                DomainChip(pair.second, pair == selected) { onSelect(pair) }
+            options.forEach { option ->
+                DomainChip(option, option == selected) { onSelect(option) }
             }
         }
     } else {
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
-            items(pairs, key = { it.first + "|" + it.second }) { pair ->
-                DomainRow(pair.second, pair == selected) { onSelect(pair) }
+            items(options, key = { it.origin + "|" + it.domain }) { option ->
+                DomainRow(option, option == selected) { onSelect(option) }
             }
         }
     }
 }
 
+/** Semantics text for one option: the address domain, plus the hosting server when that is
+ * not already obvious. Read by tests and by TalkBack, which must not be able to confuse two
+ * same-named options either. */
+private fun optionSemantics(option: LnaddrDomainOption): String =
+    option.originLabel?.let { "${option.domain}, hosted by $it" } ?: option.domain
+
 @Composable
-private fun DomainChip(domain: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
+private fun DomainChip(option: LnaddrDomainOption, selected: Boolean, onClick: () -> Unit) {
+    Column(
         Modifier
             .background(if (selected) PyxOrange.copy(alpha = 0.14f) else PyxSurface2, RoundedCornerShape(10.dp))
             .border(1.dp, if (selected) PyxOrange else PyxBorder, RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .semantics { text = AnnotatedString(optionSemantics(option)) },
     ) {
         Text(
-            domain,
+            option.domain,
             style = PyxType.rowSub.copy(fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold),
             color = if (selected) PyxOrange else PyxMuted,
         )
+        option.originLabel?.let {
+            Text(
+                it,
+                style = PyxType.rowSub.copy(fontSize = 11.sp),
+                color = PyxFaint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clearAndSetSemantics {},
+            )
+        }
     }
 }
 
 @Composable
-private fun DomainRow(domain: String, selected: Boolean, onClick: () -> Unit) {
+private fun DomainRow(option: LnaddrDomainOption, selected: Boolean, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth()
             .background(if (selected) PyxSurface2 else Color.Transparent, RoundedCornerShape(11.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 12.dp)
+            .semantics { text = AnnotatedString(optionSemantics(option)) },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(domain, style = PyxType.keyValue.copy(fontSize = 14.5.sp), color = PyxText, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Text(option.domain, style = PyxType.keyValue.copy(fontSize = 14.5.sp), color = PyxText)
+            option.originLabel?.let {
+                Text(
+                    it,
+                    style = PyxType.rowSub.copy(fontSize = 11.5.sp),
+                    color = PyxFaint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clearAndSetSemantics {},
+                )
+            }
+        }
         if (selected) Icon(PyxIcons.Check, contentDescription = "Selected", tint = PyxOrange, modifier = Modifier.size(18.dp))
     }
 }
