@@ -13,9 +13,17 @@ use fedimint_core::config::FederationId;
 use fedimint_core::db::Database;
 
 use super::{
-    DEFAULT_RELAYS, HttpTransport, LnAddressRecord, LnAddressStore, LnaddrApi, OwnedAddress,
-    QuoteResult, RegisterOk, ReqwestTransport, discover, nostr_keypair,
+    HttpTransport, LnAddressRecord, LnAddressStore, LnaddrApi, OwnedAddress, QuoteResult,
+    RegisterOk, ReqwestTransport, default_server_domain, default_server_origin, is_public_domain,
+    nostr_keypair,
 };
+
+/// lnaddrd's own `Username` cap (`docs/protocol` / its `domain.rs`): at most
+/// 64 bytes of ASCII `a-z0-9-_.`.
+const MAX_USERNAME_BYTES: usize = 64;
+
+/// RFC 1035's maximum DNS name length, which lnaddrd's `Domain` also enforces.
+const MAX_DOMAIN_BYTES: usize = 253;
 
 /// Production alias: the service backed by the crate's pinned reqwest
 /// transport. This is what [`crate::factory::ConduitClientFactory`]
@@ -35,6 +43,28 @@ pub(crate) struct LnAddressService<T: HttpTransport> {
     /// copy for signing.
     #[allow(dead_code)]
     keypair: Keypair,
+}
+
+/// Whether a server-supplied `username` is one this wallet is willing to
+/// persist: lnaddrd's own rule (non-empty, at most 64 bytes, lowercase ASCII
+/// `a-z0-9`, `-`, `_`, `.`), which is also exactly what the claim path can
+/// produce (the claim sheet sanitizes to the same character set).
+fn is_valid_username(username: &str) -> bool {
+    !username.is_empty()
+        && username.len() <= MAX_USERNAME_BYTES
+        && username.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_' | b'.')
+        })
+}
+
+/// Whether a server-supplied `domain` is one this wallet is willing to
+/// persist: the same public-registrable-domain rule the claim path's
+/// announcements are held to, plus RFC 1035's length cap. The built-in
+/// server's own domain is always accepted — under the `lnaddr-debug-server`
+/// feature it is deliberately a non-public one.
+fn is_valid_recovered_domain(domain: &str) -> bool {
+    domain.len() <= MAX_DOMAIN_BYTES
+        && (is_public_domain(domain) || domain == default_server_domain())
 }
 
 /// Seconds since the Unix epoch, for `claimed_at_secs`.
@@ -223,10 +253,11 @@ impl<T: HttpTransport> LnAddressService<T> {
                     self.store.upsert(updated).await;
                 }
                 Err(error) => {
+                    // Deliberately identifier-free: this log is persisted and
+                    // user-exportable (see `logging.rs`), and the address is
+                    // a public handle tied to this wallet.
                     tracing::warn!(
                         target: "conduit",
-                        domain = %record.domain,
-                        username = %record.username,
                         error,
                         "lnaddr: destination sync failed",
                     );
@@ -235,18 +266,30 @@ impl<T: HttpTransport> LnAddressService<T> {
         }
     }
 
-    /// NIP-98 `list_owned` against the default server plus every discovered
-    /// one, merging results into the store (records already present are
-    /// left untouched) and binding each owned address's federation by
-    /// matching its destination against `known` (federation -> current
-    /// lnurl); no match leaves it unassigned. Returns the number of newly
-    /// added records.
+    /// NIP-98 `list_owned` against **only** the servers the user already has
+    /// a relationship with — the built-in default origin plus every origin
+    /// already present in the local store — merging results into the store
+    /// (records already present are left untouched) and binding each owned
+    /// address's federation by matching its destination against `known`
+    /// (federation -> current lnurl); no match leaves it unassigned. Returns
+    /// the number of newly added records.
+    ///
+    /// Deliberately **not** relay discovery: a `list_owned` call attaches a
+    /// NIP-98 event signed with the wallet's permanent, seed-derived
+    /// identity, so querying a relay-announced origin would hand the wallet's
+    /// stable npub (plus IP and timing) to anyone who managed to publish one
+    /// valid `kind:30078` announcement, with no user interaction at all —
+    /// this runs on every visit to Settings → Lightning addresses. Recovery
+    /// still finds everything it promised to for servers the user actually
+    /// claimed against; a server the user has never used has nothing of
+    /// theirs to return.
     pub async fn recover(&self, known: Vec<(FederationId, String)>) -> Result<u32, String> {
-        let origins: Vec<String> = discover(&DEFAULT_RELAYS)
-            .await
-            .into_iter()
-            .map(|server| server.origin)
-            .collect();
+        let mut origins: Vec<String> = vec![default_server_origin().to_string()];
+        for record in self.store.list().await {
+            if !origins.contains(&record.server_origin) {
+                origins.push(record.server_origin);
+            }
+        }
 
         Ok(self.recover_from_origins(&origins, &known).await)
     }
@@ -270,6 +313,18 @@ impl<T: HttpTransport> LnAddressService<T> {
             };
 
             for address in owned {
+                // A `list_owned` body is server-controlled input. Hold it to
+                // the same domain/username rules the claim path enforces, so
+                // a compromised or hostile server can't inject a record whose
+                // display string impersonates another address (or whose
+                // domain/username the rest of the wallet never expected to
+                // see) into the local store.
+                if !is_valid_recovered_domain(&address.domain)
+                    || !is_valid_username(&address.username)
+                {
+                    continue;
+                }
+
                 if self
                     .store
                     .get(&address.domain, &address.username)
@@ -292,6 +347,13 @@ impl<T: HttpTransport> LnAddressService<T> {
                         federation_id,
                         destination: address.destination,
                         is_primary: false,
+                        // The server does not report when the address was
+                        // originally claimed, so every record recovered in
+                        // one pass gets the same "now". Accepted: it makes
+                        // the store's "promote the oldest remaining record"
+                        // rule effectively insertion-ordered after a
+                        // recovery, which is arbitrary but stable, and the
+                        // user can pick a primary explicitly.
                         claimed_at_secs: now_secs(),
                         management_token: None,
                     })
@@ -415,6 +477,21 @@ mod tests {
     /// `FakeTransport` can't: each origin needs its own outcome.
     struct MixedTransport {
         responses: Vec<(String, Result<(u16, Vec<u8>), String>)>,
+        recorded: Mutex<Vec<String>>,
+    }
+
+    impl MixedTransport {
+        fn new(responses: Vec<(String, Result<(u16, Vec<u8>), String>)>) -> Self {
+            Self {
+                responses,
+                recorded: Mutex::new(Vec::new()),
+            }
+        }
+
+        /// Every URL this transport was asked for, in order.
+        fn urls(&self) -> Vec<String> {
+            self.recorded.lock().unwrap().clone()
+        }
     }
 
     impl HttpTransport for MixedTransport {
@@ -425,6 +502,7 @@ mod tests {
             _headers: Vec<(String, String)>,
             _body: Option<Vec<u8>>,
         ) -> Result<(u16, Vec<u8>), String> {
+            self.recorded.lock().unwrap().push(url.to_string());
             self.responses
                 .iter()
                 .find(|(prefix, _)| url.starts_with(prefix.as_str()))
@@ -603,6 +681,135 @@ mod tests {
         );
     }
 
+    /// Recovery only ever talks to servers the user already has a
+    /// relationship with: the built-in default origin, plus origins already
+    /// present in the local store. An origin that merely announced itself on
+    /// a public relay must never be queried — `list_owned` attaches a NIP-98
+    /// event signed with the wallet's permanent seed-derived identity, so a
+    /// single query would disclose the wallet's stable npub to whoever
+    /// published that announcement.
+    #[tokio::test]
+    async fn recover_queries_only_the_default_and_locally_known_origins() {
+        let ok_body = br#"{"addresses":[]}"#;
+        let transport = Arc::new(MixedTransport::new(vec![
+            (
+                default_server_origin().to_string(),
+                Ok((200, ok_body.to_vec())),
+            ),
+            (
+                "https://claimed.example.com".to_string(),
+                Ok((200, ok_body.to_vec())),
+            ),
+        ]));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
+
+        // One record the user actually claimed, on a non-default server.
+        svc.store
+            .upsert(LnAddressRecord {
+                server_origin: "https://claimed.example.com".to_string(),
+                ..record(None, "LNURL1A", 100)
+            })
+            .await;
+
+        svc.recover(Vec::new())
+            .await
+            .expect("recover must not fail when every queried origin answers");
+
+        let urls = transport.urls();
+        assert_eq!(
+            urls.len(),
+            2,
+            "expected exactly the default origin and the one claimed origin: {urls:?}"
+        );
+        assert!(
+            urls.iter()
+                .any(|url| url.starts_with(default_server_origin())),
+            "the built-in default server must always be queried: {urls:?}"
+        );
+        assert!(
+            urls.iter()
+                .any(|url| url.starts_with("https://claimed.example.com")),
+            "an origin the user has claimed against must be queried: {urls:?}"
+        );
+        assert!(
+            !urls
+                .iter()
+                .any(|url| url.contains("attacker") || url.contains("relay")),
+            "no relay-discovered origin may be queried: {urls:?}"
+        );
+    }
+
+    /// The same guarantee stated as a property: an origin that is neither the
+    /// default nor in the store is never contacted, however it was announced.
+    #[tokio::test]
+    async fn recover_never_queries_an_unknown_origin() {
+        let transport = Arc::new(MixedTransport::new(vec![(
+            default_server_origin().to_string(),
+            Ok((200, br#"{"addresses":[]}"#.to_vec())),
+        )]));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
+
+        svc.recover(Vec::new()).await.expect("recover succeeds");
+
+        let urls = transport.urls();
+        assert_eq!(
+            urls,
+            vec![format!("{}/api/v1/addresses", default_server_origin())],
+            "an empty store must yield exactly one query, to the built-in default"
+        );
+    }
+
+    /// `list_owned` bodies are server-controlled. Anything failing the
+    /// claim-path domain/username rules is dropped rather than persisted.
+    #[tokio::test]
+    async fn recover_drops_records_failing_validation() {
+        let body = r#"{"addresses":[
+            {"domain":"example.com","username":"alice","destination":"LNURL1KNOWN"},
+            {"domain":"localhost","username":"bob","destination":"LNURL1KNOWN"},
+            {"domain":"single-label","username":"carol","destination":"LNURL1KNOWN"},
+            {"domain":"evil.example","username":"dave","destination":"LNURL1KNOWN"},
+            {"domain":"example.com","username":"Eve Smith!","destination":"LNURL1KNOWN"},
+            {"domain":"example.com","username":"","destination":"LNURL1KNOWN"}
+        ]}"#;
+        let transport = Arc::new(FakeTransport::new(200, body));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
+
+        let added = svc
+            .recover_from_origins(&["https://pay.example.com".to_string()], &[])
+            .await;
+
+        assert_eq!(added, 1, "only the well-formed record may be persisted");
+        let stored = svc.snapshot().await;
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].username, "alice");
+        assert_eq!(stored[0].domain, "example.com");
+    }
+
+    #[tokio::test]
+    async fn recover_rejects_an_over_long_username_or_domain() {
+        let long_username = "a".repeat(MAX_USERNAME_BYTES + 1);
+        // Four maximum-length labels: 4*63 + 3 dots = 255 bytes, over RFC
+        // 1035's 253-byte cap, while every individual label stays legal.
+        let label = "a".repeat(63);
+        let long_domain = [label.as_str(); 4].join(".");
+        assert!(long_domain.len() > MAX_DOMAIN_BYTES);
+        let body = format!(
+            r#"{{"addresses":[
+                {{"domain":"example.com","username":"{long_username}","destination":"L"}},
+                {{"domain":"{long_domain}","username":"bob","destination":"L"}}
+            ]}}"#
+        );
+        let transport = Arc::new(FakeTransport::new(200, &body));
+        let svc = LnAddressService::for_test(test_db(), test_keypair(), transport.clone());
+
+        let added = svc
+            .recover_from_origins(&["https://pay.example.com".to_string()], &[])
+            .await;
+
+        assert_eq!(added, 0, "both records exceed a documented cap");
+        assert!(svc.snapshot().await.is_empty());
+    }
+
     #[tokio::test]
     async fn recover_matches_by_destination() {
         let body = r#"{"addresses":[
@@ -667,18 +874,16 @@ mod tests {
     #[tokio::test]
     async fn recover_skips_failing_server_but_uses_others() {
         let ok_body = br#"{"addresses":[{"domain":"example.com","username":"alice","destination":"LNURL1KNOWN"}]}"#;
-        let transport = MixedTransport {
-            responses: vec![
-                (
-                    "https://dead.example.com".to_string(),
-                    Err("connection refused".to_string()),
-                ),
-                (
-                    "https://pay.example.com".to_string(),
-                    Ok((200, ok_body.to_vec())),
-                ),
-            ],
-        };
+        let transport = MixedTransport::new(vec![
+            (
+                "https://dead.example.com".to_string(),
+                Err("connection refused".to_string()),
+            ),
+            (
+                "https://pay.example.com".to_string(),
+                Ok((200, ok_body.to_vec())),
+            ),
+        ]);
         let svc = LnAddressService::for_test(test_db(), test_keypair(), transport);
         let origins = vec![
             "https://dead.example.com".to_string(),

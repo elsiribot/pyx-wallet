@@ -14,10 +14,13 @@ mod store;
 pub(crate) use api::{
     HttpTransport, LnaddrApi, OwnedAddress, QuoteResult, RegisterOk, ReqwestTransport,
 };
-#[allow(unused_imports)] // DEFAULT_SERVER/DiscoveredServer stay unused until a later
-// task exposes discovery results directly (service::recover only needs discover()
-// and DEFAULT_RELAYS).
-pub(crate) use discovery::{DEFAULT_RELAYS, DEFAULT_SERVER, DiscoveredServer, discover};
+#[allow(unused_imports)] // DEFAULT_SERVER stays unused now that callers go through
+// default_server_origin()/default_server_domain(), which honour the debug override;
+// it is kept exported as the documented shipped constant.
+pub(crate) use discovery::{
+    DEFAULT_RELAYS, DEFAULT_SERVER, DiscoveredServer, default_server_domain, default_server_origin,
+    discover, is_allowed_origin, is_public_domain,
+};
 #[allow(unused_imports)] // nostr_pubkey_hex stays unused until a later task exposes
 // the wallet's Nostr identity directly (e.g. a JNI "my lnaddr pubkey" call).
 pub(crate) use identity::{nostr_keypair, nostr_pubkey_hex};

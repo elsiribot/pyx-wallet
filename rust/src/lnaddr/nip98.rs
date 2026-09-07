@@ -9,8 +9,19 @@
 //! SHA-256 of the request body — present if and only if the request has a
 //! body. A `payload` tag on a bodyless request is rejected server-side, so
 //! this module never emits one unless `body` is `Some`.
+//!
+//! Every event also carries a random `nonce` tag. Without it the event is
+//! fully deterministic — the NIP-01 id is
+//! `H(pubkey, created_at, kind, tags, content)` with a second-granular
+//! `created_at`, and the signature is not part of the id — so two identical
+//! requests inside the same second would produce the same event id, and the
+//! second would trip lnaddrd's replay guard and surface as a misleading
+//! "unauthorized — check your device clock". lnaddrd's NIP-98 verifier
+//! matches on `u`/`method`/`payload` and ignores every other tag (see its
+//! `src/nostr/http_auth.rs`), so the extra tag is inert on the wire.
 
 use base64::Engine;
+use bitcoin::secp256k1::rand::{self, RngCore};
 use bitcoin::secp256k1::{Keypair, Message, Secp256k1};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -51,7 +62,17 @@ pub(crate) fn nip98_header(
     let (x_only, _parity) = keypair.x_only_public_key();
     let pubkey_hex = fedimint_core::hex::encode(x_only.serialize());
 
-    let mut tags: Vec<Value> = vec![json!(["u", url]), json!(["method", method.to_uppercase()])];
+    // 16 bytes of OS randomness, so two byte-identical requests in the same
+    // second still produce different event ids. See the module doc.
+    let mut nonce_bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    let nonce = fedimint_core::hex::encode(nonce_bytes);
+
+    let mut tags: Vec<Value> = vec![
+        json!(["u", url]),
+        json!(["method", method.to_uppercase()]),
+        json!(["nonce", nonce]),
+    ];
     if let Some(body) = body {
         let payload_hex = fedimint_core::hex::encode(Sha256::digest(body));
         tags.push(json!(["payload", payload_hex]));
@@ -200,6 +221,71 @@ mod tests {
         let secp = Secp256k1::new();
         secp.verify_schnorr(&sig, &message, &pubkey)
             .expect("signature must verify against the event's own pubkey and id");
+    }
+
+    /// Two identical bodyless requests signed inside the same `created_at`
+    /// second must still be distinct events. Without the `nonce` tag the id
+    /// preimage (`pubkey`, `created_at`, `kind`, `tags`, `content`) would be
+    /// byte-identical, the ids would collide, and lnaddrd's replay guard
+    /// would reject the retry as "unauthorized — check your device clock".
+    #[test]
+    fn successive_calls_produce_different_event_ids() {
+        let keypair = test_keypair();
+        let url = "https://pay.example.com/api/v1/addresses";
+        let created_at = 1_700_000_000;
+
+        let first = decode_header(&nip98_header(&keypair, url, "GET", None, created_at));
+        let second = decode_header(&nip98_header(&keypair, url, "GET", None, created_at));
+
+        assert_eq!(
+            first["created_at"], second["created_at"],
+            "this test is only meaningful when both events share a second"
+        );
+        assert_ne!(
+            first["id"], second["id"],
+            "same-second retries must not reuse an event id"
+        );
+
+        // Each id is still the honest NIP-01 hash of its own preimage.
+        assert_eq!(first["id"], recompute_id_hex(&first));
+        assert_eq!(second["id"], recompute_id_hex(&second));
+    }
+
+    #[test]
+    fn nonce_tag_is_present_and_random() {
+        let keypair = test_keypair();
+        let url = "https://pay.example.com/api/v1/addresses";
+
+        fn nonce_of(event: &Value) -> String {
+            event["tags"]
+                .as_array()
+                .expect("tags is an array")
+                .iter()
+                .find(|tag| tag[0] == "nonce")
+                .expect("every event carries a nonce tag")[1]
+                .as_str()
+                .expect("nonce is a string")
+                .to_string()
+        }
+
+        let first = nonce_of(&decode_header(&nip98_header(
+            &keypair,
+            url,
+            "GET",
+            None,
+            1_700_000_000,
+        )));
+        let second = nonce_of(&decode_header(&nip98_header(
+            &keypair,
+            url,
+            "GET",
+            None,
+            1_700_000_000,
+        )));
+
+        assert_eq!(first.len(), 32, "16 random bytes, lowercase hex");
+        assert!(first.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(first, second);
     }
 
     #[test]

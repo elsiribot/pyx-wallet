@@ -58,8 +58,17 @@ key is derivable without touching fedimint-client internals.
 All requests target a server *origin* from discovery or the default.
 NIP-98 header: kind 27235 event, `u` = full request URL incl. query,
 `method` tag, `payload` tag = lowercase-hex SHA-256 of the body iff a
-body exists, `created_at` within ±60 s, base64 in
-`Authorization: Nostr <b64>`; events are single-use.
+body exists, a random `nonce` tag, `created_at` within ±60 s, base64 in
+`Authorization: Nostr <b64>`; events are single-use. The `nonce` is
+required by that single-use rule: `created_at` is second-granular and
+the signature is not part of the NIP-01 id, so without it two identical
+requests in the same second would produce the same event id and the
+second would be rejected as a replay.
+
+Every origin the wallet signs a request for — whether from an
+announcement, the default entry, or the JNI bridge — must be a bare,
+canonical `https://` origin on a public registrable host with no path,
+query or fragment.
 
 | Action | Endpoint | Auth |
 |---|---|---|
@@ -88,11 +97,18 @@ Query a small hardcoded relay list for `kind:30078` events with tag
 `t=lightning-address-service`, parse per microstandard 02 (validate
 `schema:1`, required fields, domain rules; ignore unknown capabilities).
 Only servers advertising `registration-api-v1` **and** `nostr-auth` are
-offered. Results are cached in the app DB with fetch timestamp;
-refreshed in the background when the claim sheet opens (stale cache is
-shown immediately). The `pyx.cash` default entry is always present and
-pre-selected. Pricing from announcements is informational; the live
-quote is authoritative.
+offered. **Deferred:** the app-DB discovery cache with fetch timestamp
+(stale cache shown immediately, refreshed in the background when the
+claim sheet opens) was not implemented and is a follow-up — each open
+re-queries the relays, bounded by the 5s budget, and the claim sheet
+falls back to the built-in default entry if that query fails. The
+`pyx.cash` default entry is always present and pre-selected. Pricing
+from announcements is informational; the live quote is authoritative.
+
+Relay queries are bounded: the REQ filter carries an explicit `limit`
+and the collected event list is hard-capped per relay, so a hostile
+relay cannot make the wallet buffer and signature-verify an unbounded
+stream for the whole budget window.
 
 ## Data model & storage
 
@@ -129,16 +145,32 @@ reqwest/rustls stack already in the dependency tree.
   failures retry silently on next load. Never block wallet startup.
 - **After seed recovery / on Settings-addresses screen open:** re-derive
   the npub, call `GET /api/v1/addresses` against the default server plus
-  discovered servers, and merge results into local records. Each
+  every server origin already present in the local address store, and
+  merge results into local records. (Narrowed from "default plus
+  discovered servers": `GET /api/v1/addresses` carries a NIP-98 event
+  signed with the wallet's permanent seed-derived identity, and this runs
+  with no user interaction on every visit to the addresses screen, so
+  querying a relay-announced origin would disclose the wallet's stable
+  npub to anyone who managed to publish one valid announcement. A server
+  the user has never claimed against holds nothing of theirs to return.)
+  Each
   recovered address's server-side `destination` is matched against the
   LNURLs of currently-joined federations; a match binds it, otherwise
   `federation_id = None` ("unassigned") and the user can re-point it
   from the detail view (which issues a `PUT` with the chosen
   federation's LNURL). First recovered/claimed address of a federation
   becomes its primary.
-- **Caveat (accepted):** recovery only finds addresses on servers the
-  wallet can see (default + currently-announced). A server that stopped
-  announcing and isn't the default won't be searched.
+- **Caveat (accepted):** recovery only finds addresses on the default
+  server and on servers already recorded locally. After a fresh seed
+  restore the local store is empty, so recovery finds addresses on the
+  default server only; addresses on another server have to be recovered
+  by re-adding that server (a follow-up), which is the price of not
+  broadcasting the wallet's npub to unrelated origins.
+- **Recovered-record validation:** `GET /api/v1/addresses` bodies are
+  server-controlled. Every returned `domain`/`username` is held to the
+  same rules the claim path enforces (public registrable domain, ≤253
+  bytes; username ≤64 bytes of lowercase `a-z0-9-_.`); records that fail
+  are dropped rather than persisted.
 
 ## UI (native Compose)
 

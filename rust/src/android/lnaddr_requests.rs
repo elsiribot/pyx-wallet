@@ -22,7 +22,9 @@ use serde_json::{Value, json};
 
 use crate::client::ConduitClient;
 use crate::factory::ConduitClientFactory;
-use crate::lnaddr::{DEFAULT_RELAYS, DiscoveredServer, LnAddressRecord, QuoteResult, discover};
+use crate::lnaddr::{
+    DEFAULT_RELAYS, DiscoveredServer, LnAddressRecord, QuoteResult, discover, is_allowed_origin,
+};
 
 use super::bootstrap;
 use super::error::{AndroidError, AndroidErrorCode};
@@ -241,8 +243,19 @@ fn quote_json(result: &QuoteResult) -> Value {
     json!({ "state": state, "priceMsat": price_msat })
 }
 
+/// `origin` is interpolated straight into request URLs and is what the wallet
+/// signs a NIP-98 event for, so the bridge holds it to exactly the rule
+/// announcement parsing uses ([`crate::lnaddr::is_allowed_origin`]): a bare
+/// `https://` origin on a public registrable host, with no path, query or
+/// fragment. The byte cap stays as a cheap pre-filter so a pathological input
+/// never reaches the URL parser.
+///
+/// Under the non-default `lnaddr-debug-server` feature `is_allowed_origin`
+/// additionally admits the compiled-in loopback debug origin, keeping the
+/// documented end-to-end smoke build working; release builds cannot enable
+/// that feature.
 fn validate_origin(origin: &str) -> Result<(), AndroidError> {
-    if origin.is_empty() || origin.len() > MAX_ORIGIN_BYTES {
+    if origin.is_empty() || origin.len() > MAX_ORIGIN_BYTES || !is_allowed_origin(origin) {
         return Err(invalid_lnaddr());
     }
     Ok(())
@@ -363,6 +376,34 @@ mod tests {
             serialize(json!({"recovered": i64::from(3u32)})).unwrap(),
             "{\"recovered\":3}"
         );
+    }
+
+    /// The bridge must not be a laxer door into the signing path than
+    /// announcement parsing is: every origin shape `is_allowed_origin`
+    /// rejects has to be rejected here too, because `origin` is interpolated
+    /// raw into the request URL that the NIP-98 `u` tag then commits to.
+    #[test]
+    fn origin_validation_matches_the_announcement_rule() {
+        assert!(validate_origin("https://pay.example.com").is_ok());
+        assert!(validate_origin("https://pay.example.com/").is_ok());
+
+        for rejected in [
+            "http://pay.example.com",
+            "https://pay.example.com/api/v1",
+            "https://pay.example.com/?x=1",
+            "https://pay.example.com#f",
+            "https://127.0.0.1",
+            "https://localhost",
+            "https://pay.example",
+            "https://nodots",
+            "not a url",
+            "  https://pay.example.com",
+        ] {
+            assert!(
+                validate_origin(rejected).is_err(),
+                "{rejected:?} must not reach the signing path"
+            );
+        }
     }
 
     #[test]

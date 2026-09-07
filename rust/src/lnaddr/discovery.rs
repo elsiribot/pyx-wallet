@@ -57,6 +57,14 @@ const RELAY_QUERY_BUDGET: Duration = Duration::from_secs(5);
 /// between our REQ and the relay's EVENT/EOSE replies.
 const SUBSCRIPTION_ID: &str = "pyx";
 
+/// `limit` sent in the REQ filter, and the hard cap on events collected from
+/// one relay. A relay that ignores the filter's `limit` (or streams events it
+/// invented) would otherwise be able to make us buffer — and schnorr-verify —
+/// an unbounded number of events for the whole [`RELAY_QUERY_BUDGET`]. The
+/// realistic population of lnaddrd announcements is a handful, so a low cap
+/// costs nothing and bounds both memory and verification work.
+const MAX_EVENTS_PER_RELAY: usize = 64;
+
 /// A validated, deduplicated Lightning Address service, ready to offer as a
 /// registration destination.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,7 +132,7 @@ fn default_server() -> DiscoveredServer {
 /// `a-z0-9-` not starting/ending with `-`, final label neither all-digits
 /// nor a reserved name (`localhost`, `local`, `internal`, `test`,
 /// `invalid`, `example`).
-fn is_public_domain(domain: &str) -> bool {
+pub(crate) fn is_public_domain(domain: &str) -> bool {
     let labels: Vec<&str> = domain.split('.').collect();
     if labels.len() < 2 {
         return false;
@@ -153,12 +161,56 @@ fn is_public_domain(domain: &str) -> bool {
     true
 }
 
+/// The origin of the wallet's built-in server (see
+/// [`configured_default_server`]). Used by recovery, which only ever queries
+/// this origin plus origins the user has already claimed against.
+pub(crate) fn default_server_origin() -> &'static str {
+    configured_default_server().0
+}
+
+/// The domain of the wallet's built-in server (see
+/// [`configured_default_server`]).
+pub(crate) fn default_server_domain() -> &'static str {
+    configured_default_server().1
+}
+
+/// Origin acceptance for anything the wallet will sign a NIP-98 request
+/// against — the single rule shared by announcement parsing and the JNI
+/// boundary, so a caller-supplied origin can never be laxer than a
+/// relay-supplied one.
+///
+/// Exactly [`is_valid_origin`] in shipped builds. Under the non-default
+/// `lnaddr-debug-server` feature the compiled-in debug origin (typically
+/// `http://127.0.0.1:8080`, see [`configured_default_server`]) is also
+/// accepted verbatim, so a debug APK can talk to a loopback lnaddrd. Nothing
+/// is read at runtime, so this still admits exactly one extra constant, and
+/// only in a build that already carries it.
+pub(crate) fn is_allowed_origin(origin: &str) -> bool {
+    #[cfg(feature = "lnaddr-debug-server")]
+    if origin == configured_default_server().0 {
+        return true;
+    }
+    is_valid_origin(origin)
+}
+
 /// `origin` must be a bare `https://` URL (no path/query/fragment) whose
-/// host is a public registrable domain per [`is_public_domain`].
+/// host is a public registrable domain per [`is_public_domain`]. An explicit
+/// port is allowed: doc 02 normalizes origins as "`https` scheme, lowercase
+/// ASCII host, optional non-default port, no trailing slash".
+///
+/// The string must additionally be the *canonical* serialization of what it
+/// parses to (modulo the trailing slash `Url` always adds to an empty path).
+/// `Url::parse` silently strips leading/trailing whitespace and embedded tab
+/// and newline characters, so without this the accepted string and the string
+/// later interpolated into a request URL — which is what the NIP-98 `u` tag
+/// commits to — would not be the same thing.
 fn is_valid_origin(origin: &str) -> bool {
     let Ok(url) = url::Url::parse(origin) else {
         return false;
     };
+    if url.as_str() != origin && url.as_str() != format!("{origin}/") {
+        return false;
+    }
     if url.scheme() != "https" {
         return false;
     }
@@ -408,7 +460,11 @@ async fn query_relay_inner(relay: &str) -> Result<Vec<Value>, String> {
     let req = serde_json::json!([
         "REQ",
         SUBSCRIPTION_ID,
-        {"kinds": [KIND_SERVICE_ANNOUNCEMENT], "#t": [SERVICE_TAG]}
+        {
+            "kinds": [KIND_SERVICE_ANNOUNCEMENT],
+            "#t": [SERVICE_TAG],
+            "limit": MAX_EVENTS_PER_RELAY,
+        }
     ]);
     write
         .send(WsMessage::Text(req.to_string()))
@@ -431,6 +487,12 @@ async fn query_relay_inner(relay: &str) -> Result<Vec<Value>, String> {
             Some("EVENT") => {
                 if let Some(event) = arr.get(2) {
                     events.push(event.clone());
+                    // A relay that ignores `limit` and keeps streaming must
+                    // not be able to grow this Vec (or the verification work
+                    // `merge` does over it) without bound.
+                    if events.len() >= MAX_EVENTS_PER_RELAY {
+                        break;
+                    }
                 }
             }
             Some("EOSE") => break,
@@ -567,6 +629,73 @@ mod tests {
         let server = default_server();
         assert_eq!(server.origin, DEFAULT_SERVER.0);
         assert_eq!(server.domains, vec![DEFAULT_SERVER.1.to_string()]);
+    }
+
+    /// [`is_valid_origin`] is the gate that decides which hosts the wallet
+    /// will sign a NIP-98 event for — both from a relay announcement and (via
+    /// [`is_allowed_origin`]) from the JNI boundary — so each rejection rule
+    /// is pinned individually rather than only through `parse_announcement`.
+    #[test]
+    fn origin_must_be_a_bare_https_public_origin() {
+        assert!(is_valid_origin("https://pay.example.com"));
+        assert!(
+            is_valid_origin("https://pay.example.com/"),
+            "a bare trailing slash is still a path-free origin"
+        );
+        assert!(
+            is_valid_origin("https://pay.example.com:8443"),
+            "doc 02 normalizes origins with an optional non-default port"
+        );
+
+        assert!(
+            !is_valid_origin("http://pay.example.com"),
+            "cleartext http must never reach the signing path"
+        );
+        assert!(!is_valid_origin("http://pay.example.com:8080"));
+        assert!(
+            !is_valid_origin("https://pay.example.com/api"),
+            "a path-bearing origin would move the signed `u` tag's base"
+        );
+        assert!(!is_valid_origin("https://pay.example.com/?a=b"));
+        assert!(!is_valid_origin("https://pay.example.com#frag"));
+        assert!(
+            !is_valid_origin("https://127.0.0.1"),
+            "an IP literal is not a public registrable domain"
+        );
+        assert!(!is_valid_origin("https://localhost"));
+        assert!(!is_valid_origin("https://pay.example"));
+        assert!(!is_valid_origin("https://single-label"));
+        assert!(
+            !is_valid_origin("wss://pay.example.com"),
+            "only https is a valid registration origin"
+        );
+        assert!(!is_valid_origin("pay.example.com"));
+        assert!(!is_valid_origin(""));
+        assert!(
+            !is_valid_origin("  https://pay.example.com  "),
+            "Url::parse strips surrounding whitespace; the raw string is what gets \
+             interpolated into the signed request URL, so it must not differ"
+        );
+        assert!(!is_valid_origin("https://pay.exa\tmple.com"));
+        assert!(
+            !is_valid_origin("https://PAY.example.com"),
+            "a non-canonical host would sign a `u` tag the server sees differently"
+        );
+    }
+
+    /// The built-in server must pass the same gate every other origin does.
+    /// Skipped under the debug-override feature, where the compiled-in origin
+    /// is deliberately a loopback one that [`is_allowed_origin`] admits by
+    /// identity rather than by rule.
+    #[test]
+    #[cfg_attr(
+        feature = "lnaddr-debug-server",
+        ignore = "debug override feature is enabled in this build"
+    )]
+    fn built_in_origin_passes_the_origin_gate() {
+        assert!(is_valid_origin(default_server_origin()));
+        assert!(is_allowed_origin(default_server_origin()));
+        assert!(is_public_domain(default_server_domain()));
     }
 
     #[test]
