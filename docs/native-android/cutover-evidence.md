@@ -366,6 +366,14 @@ the very viewport the certification pins. It now declares `Theme.Pyx`
 explicitly, so captures show only app chrome. Screenshots taken before
 2026-09-07 include that band.
 
+A separate, live end-to-end run of the same feature against a real `lnaddrd`
+server on the redroid device — claim, persistence across a force-stop, release
+and re-claim, and recovery of the claimed address after a full data wipe plus
+seed restore, each cross-checked against the server's own SQLite rows and HTTP
+API — is recorded in `docs/native-android/lnaddr-smoke.md` (2026-09-07). That
+run is single-device manual observation, not a certification lane, and it did
+not exercise an actual payment to the claimed address.
+
 ### Deterministic onboarding and recovery coverage — PASS (2026-09-02)
 
 The complete debug unit-test suite and lint passed after adding focused

@@ -114,6 +114,43 @@ if [[ -n "$APK" ]]; then
   rg -q '^lib/arm64-v8a/libc\+\+_shared\.so$' <<<"$APK_ENTRIES" || fail "APK lacks arm64 libc++_shared.so"
   if rg -q '^lib/(armeabi-v7a|x86|x86_64)/' <<<"$APK_ENTRIES"; then fail "production APK contains a non-arm64 ABI"; fi
   if rg -q 'libflutter\.so|flutter_assets|libconduit\.so' <<<"$APK_ENTRIES"; then fail "APK contains Flutter/legacy artifacts"; fi
+
+  # No shipped libpyx.so may carry a baked debug lnaddrd origin.
+  #
+  # tool/build-native-android.sh installs whatever Rust library it just built
+  # into android-native/app/src/main/jniLibs, and gradle consumes those
+  # prebuilt libraries with no cargo hook of its own. So a developer who runs
+  # the documented Lightning-address smoke build (which bakes a local lnaddrd
+  # origin via PYX_LNADDR_DEBUG_ORIGIN, see docs/native-android/lnaddr-smoke.md)
+  # and afterwards invokes `gradlew assembleRelease` directly — instead of
+  # tool/build-native-android.sh --release, whose env guard would refuse —
+  # would package a wallet that registers Lightning addresses against their
+  # laptop. Only convention stands between those two commands, so assert on the
+  # packaged library, which is the artifact that actually ships.
+  #
+  # The positive assertion is the load-bearing one and it is exact, not a
+  # heuristic: when the override is compiled in, lnaddr::discovery's
+  # DEFAULT_SERVER fallback becomes statically dead and the literal is dropped
+  # from the binary entirely (measured: 0 occurrences of "https://pyx.cash" in
+  # an override build of either ABI, 1 in a clean build). The negative
+  # assertion is defence in depth for a hypothetical override that leaves the
+  # default literal alive: a locally run lnaddrd is only ever reachable at a
+  # cleartext loopback/private origin or one with an explicit port, and the
+  # shipped wallet embeds no such URL (measured: 0 matches in a clean build).
+  LIBPYX_ENTRIES="$(rg '^lib/[^/]+/libpyx\.so$' <<<"$APK_ENTRIES" || true)"
+  [[ -n "$LIBPYX_ENTRIES" ]] || fail "APK has no libpyx.so to inspect"
+  APK_ABS="$(cd "$(dirname "$APK")" && pwd)/$(basename "$APK")"
+  LIB_WORK="$(mktemp -d)"
+  trap 'rm -rf "$LIB_WORK"' EXIT
+  while IFS= read -r entry; do
+    (cd "$LIB_WORK" && jar xf "$APK_ABS" "$entry") || fail "cannot extract $entry from the APK"
+    rg -q -a -F 'https://pyx.cash' "$LIB_WORK/$entry" \
+      || fail "$entry does not contain the built-in Lightning Address server https://pyx.cash — it was built with the lnaddr-debug-server override, or jniLibs is stale"
+    if rg -a -o 'http://(localhost|127\.[0-9]+\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+|0\.0\.0\.0|\[::1\]|[A-Za-z0-9._-]+:[0-9]{2,5})' "$LIB_WORK/$entry"; then
+      fail "$entry carries a baked cleartext local origin"
+    fi
+    rm -f "$LIB_WORK/$entry"
+  done <<<"$LIBPYX_ENTRIES"
 fi
 
 echo "Internal native Android source security review checks passed."

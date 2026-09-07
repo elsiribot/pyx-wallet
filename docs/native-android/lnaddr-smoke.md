@@ -1,5 +1,7 @@
 # Lightning address — end-to-end smoke against a real `lnaddrd`
 
+Run date: **2026-09-07** (device and server clocks in UTC).
+
 This document records a live, manual end-to-end run of the Lightning-address
 feature (rust `lnaddr` module → JNI → Kotlin/Compose) against a real `lnaddrd`
 server, on a real Android device image. It is observation evidence for one
@@ -13,7 +15,7 @@ against that server's SQLite database or its HTTP API.
 
 | Component | Value |
 |---|---|
-| App | `cash.pyx.app.nativepreview`, `Pyx 0.6.0-debug (38)`, branch `lnaddr` at `4c96ad1` |
+| App | `cash.pyx.app.nativepreview`, `Pyx 0.6.0-debug (38)`, branch `lnaddr` at `4c96ad1` **plus the override hook later committed as `7d68bb0`** — a checkout of `4c96ad1` alone has no `lnaddr-debug-server` feature, so the build command in §2 would silently produce an APK talking to `pyx.cash`. To reproduce, check out `7d68bb0` (or later). |
 | Device | redroid container `pyx`, `10.88.0.13:5555`, 780×1688 @ 320 dpi (390×844 dp), Android 13 / SDK 33 |
 | Server | `lnaddrd` at `9b9c164` (github.com/elsirion/lnaddrd), `cargo build` (debug), bound `127.0.0.1:8080` |
 | Served domain | `pyx.test` (RFC 6761 reserved TLD — unmistakably a test domain, never a real one) |
@@ -34,7 +36,7 @@ rejected:
   `nixos-fw-log-refuse`). Using it would have meant editing the host firewall;
   `adb reverse` needs no host change at all.
 - **A TLS reverse proxy.** The wallet's `reqwest` client is built with
-  `rustls-tls` (`rust/Cargo.toml:51`), which trusts the bundled webpki root
+  `rustls-tls` (`rust/Cargo.toml`, the `reqwest` dependency line), which trusts the bundled webpki root
   set, so a self-signed or locally-issued certificate cannot be made
   trusted — not by installing a CA into the Android trust store, and not
   without weakening the client's TLS verification, which was out of scope.
@@ -121,10 +123,46 @@ nix develop -c bash -c 'PYX_ABI_X86_64=1 \
   tool/build-native-android.sh --debug'
 ```
 
-which prints `WARNING: baking debug lnaddrd override http://127.0.0.1:8080
-(pyx.test)`, and the string is observable in the packaged library
-(`strings jniLibs/{arm64-v8a,x86_64}/libpyx.so | grep http://127.0.0.1:8080` →
-one hit each). After the run the tree was rebuilt without the override.
+which prints (on stderr) `WARNING: baking debug lnaddrd override
+http://127.0.0.1:8080 (pyx.test)`, and the string is observable in the packaged
+library (`strings jniLibs/{arm64-v8a,x86_64}/libpyx.so | grep
+http://127.0.0.1:8080` → one hit each). After the run the tree was rebuilt
+without the override.
+
+### The build-script guard is not the only gate
+
+`tool/build-native-android.sh` installs whatever Rust library it just built into
+`android-native/app/src/main/jniLibs`, and gradle consumes those prebuilt
+libraries with no cargo hook of its own. So the env guard above only protects
+`tool/build-native-android.sh --release`: someone who runs the smoke build and
+then invokes `gradlew assembleRelease` **directly** would package the
+override-baked library, and nothing but convention stood between those two
+commands.
+
+`tool/review-native-android-security.sh --apk <apk>` — which the release
+workflow already runs against the built release APK
+(`.github/workflows/android-release.yml`) — now asserts on every
+`lib/*/libpyx.so` **inside the APK**, which is the artifact that actually ships:
+
+1. it must contain `https://pyx.cash`, and
+2. it must contain no cleartext `http://` origin whose host is
+   loopback/private/link-local or which carries an explicit port.
+
+Assertion 1 is exact rather than heuristic: when the override is compiled in,
+the `DEFAULT_SERVER` fallback in `configured_default_server()` becomes
+statically dead and the literal is dropped from the binary entirely. Measured on
+real builds of both ABIs: an override build contains `https://pyx.cash` **0**
+times and `http://127.0.0.1:8080` once; a clean build is the exact inverse.
+Assertion 2 is defence in depth for a hypothetical override that leaves the
+default literal alive; it matches nothing in a clean build.
+
+Both were verified to actually fire, not just to be present:
+
+| APK | Result |
+|---|---|
+| clean `--release` build | passes (exit 0) |
+| same APK with its `libpyx.so` replaced by a genuine override-baked, release-stripped one | `security review failed: lib/arm64-v8a/libpyx.so does not contain the built-in Lightning Address server https://pyx.cash …` (exit 1) |
+| same, with `https://pyx.cash` appended to that library so assertion 1 passes (a hand-made fixture, not a real build, purely to prove assertion 2 is reachable) | `security review failed: lib/arm64-v8a/libpyx.so carries a baked cleartext local origin` (exit 1) |
 
 ## 3. Walkthrough — PASS
 

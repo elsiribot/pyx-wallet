@@ -30,7 +30,7 @@ if [[ -n "${PYX_LNADDR_DEBUG_ORIGIN:-}" || -n "${PYX_LNADDR_DEBUG_DOMAIN:-}" ]];
     exit 1
   fi
   CARGO_FEATURES="$CARGO_FEATURES,lnaddr-debug-server"
-  echo "WARNING: baking debug lnaddrd override $PYX_LNADDR_DEBUG_ORIGIN ($PYX_LNADDR_DEBUG_DOMAIN)"
+  echo "WARNING: baking debug lnaddrd override $PYX_LNADDR_DEBUG_ORIGIN ($PYX_LNADDR_DEBUG_DOMAIN)" >&2
 fi
 
 JNI_ROOT="$ROOT/android-native/app/src/main/jniLibs"
