@@ -12,6 +12,27 @@ case "$MODE" in
   *) echo "usage: $0 [--debug|--release]" >&2; exit 2 ;;
 esac
 
+# Debug-only hook for the Lightning Address end-to-end smoke test: setting both
+# PYX_LNADDR_DEBUG_ORIGIN and PYX_LNADDR_DEBUG_DOMAIN bakes a locally run
+# lnaddrd in place of the wallet's built-in server (see
+# rust/src/lnaddr/discovery.rs and docs/native-android/lnaddr-smoke.md). The
+# cargo feature that reads them is refused for --release, so a release artifact
+# can carry neither the override nor the code that reads it. Checked before any
+# build step so a mistake fails immediately.
+CARGO_FEATURES="android-jni"
+if [[ -n "${PYX_LNADDR_DEBUG_ORIGIN:-}" || -n "${PYX_LNADDR_DEBUG_DOMAIN:-}" ]]; then
+  if [[ "$MODE" == "--release" ]]; then
+    echo "PYX_LNADDR_DEBUG_ORIGIN/PYX_LNADDR_DEBUG_DOMAIN cannot be used with --release" >&2
+    exit 1
+  fi
+  if [[ -z "${PYX_LNADDR_DEBUG_ORIGIN:-}" || -z "${PYX_LNADDR_DEBUG_DOMAIN:-}" ]]; then
+    echo "PYX_LNADDR_DEBUG_ORIGIN and PYX_LNADDR_DEBUG_DOMAIN must be set together" >&2
+    exit 1
+  fi
+  CARGO_FEATURES="$CARGO_FEATURES,lnaddr-debug-server"
+  echo "WARNING: baking debug lnaddrd override $PYX_LNADDR_DEBUG_ORIGIN ($PYX_LNADDR_DEBUG_DOMAIN)"
+fi
+
 JNI_ROOT="$ROOT/android-native/app/src/main/jniLibs"
 RUST_OUT="$ROOT/build/native-rust"
 TARGETS=(arm64-v8a)
@@ -38,7 +59,7 @@ echo "Building Rust JNI library for ${TARGETS[*]}"
   cd "$ROOT/rust"
   export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-z,max-page-size=16384"
   cargo ndk --platform 24 "${NDK_ARGS[@]}" -o "$RUST_OUT" \
-    build --locked --release --no-default-features --features android-jni
+    build --locked --release --no-default-features --features "$CARGO_FEATURES"
 )
 
 # Keep libconduit.so for the Flutter oracle. The native preview loads libpyx,

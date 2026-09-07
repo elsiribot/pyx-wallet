@@ -17,6 +17,13 @@ unexpected_cfgs = { level = "allow", check-cfg = ['cfg(frb_expand)'] }
 default = ["flutter-bridge"]
 flutter-bridge = ["dep:flutter_rust_bridge"]
 android-jni = ["dep:jni"]
+# Debug-only escape hatch for end-to-end testing against a locally run
+# `lnaddrd`: lets `PYX_LNADDR_DEBUG_ORIGIN` / `PYX_LNADDR_DEBUG_DOMAIN`
+# replace the built-in Lightning Address server at compile time (see
+# `lnaddr::discovery::configured_default_server`). Never enabled by
+# `default`, and `tool/build-native-android.sh` refuses to pass it for
+# `--release`, so release artifacts cannot contain this code path.
+lnaddr-debug-server = []
 
 [dependencies]
 fedimint-api-client = "0.11.0"

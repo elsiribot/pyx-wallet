@@ -81,16 +81,41 @@ pub(crate) const DEFAULT_RELAYS: [&str; 3] = [
     "wss://relay.primal.net",
 ];
 
+/// The `(origin, domain)` pair the wallet offers as its built-in server.
+///
+/// Always [`DEFAULT_SERVER`] in shipped builds. Under the non-default
+/// `lnaddr-debug-server` cargo feature — which `tool/build-native-android.sh`
+/// only ever passes for `--debug`, and refuses to pass for `--release` — the
+/// pair can be replaced at **compile time** by the `PYX_LNADDR_DEBUG_ORIGIN`
+/// and `PYX_LNADDR_DEBUG_DOMAIN` build environment variables, so a debug APK
+/// can be pointed at a locally run `lnaddrd` for an end-to-end smoke test
+/// (see `docs/native-android/lnaddr-smoke.md`). Both must be set; either one
+/// alone is ignored. Nothing is read at runtime, so there is no new input
+/// surface even in a debug build.
+fn configured_default_server() -> (&'static str, &'static str) {
+    #[cfg(feature = "lnaddr-debug-server")]
+    {
+        if let (Some(origin), Some(domain)) = (
+            option_env!("PYX_LNADDR_DEBUG_ORIGIN"),
+            option_env!("PYX_LNADDR_DEBUG_DOMAIN"),
+        ) {
+            return (origin, domain);
+        }
+    }
+    DEFAULT_SERVER
+}
+
 /// The always-present built-in entry: known to be free, and to support both
 /// required capabilities, without needing a relay announcement at all.
 fn default_server() -> DiscoveredServer {
+    let (origin, domain) = configured_default_server();
     DiscoveredServer {
-        origin: DEFAULT_SERVER.0.to_string(),
-        name: DEFAULT_SERVER.1.to_string(),
-        domains: vec![DEFAULT_SERVER.1.to_string()],
+        origin: origin.to_string(),
+        name: domain.to_string(),
+        domains: vec![domain.to_string()],
         nostr_auth: true,
         registration_api: true,
-        free_domains: vec![DEFAULT_SERVER.1.to_string()],
+        free_domains: vec![domain.to_string()],
     }
 }
 
@@ -427,8 +452,9 @@ pub(crate) async fn discover(relays: &[&str]) -> Vec<DiscoveredServer> {
     let results = futures_util::future::join_all(queries).await;
     let events: Vec<Value> = results.into_iter().flatten().collect();
 
+    let built_in_origin = configured_default_server().0;
     let mut servers = merge(&events);
-    servers.retain(|server| server.origin != DEFAULT_SERVER.0);
+    servers.retain(|server| server.origin != built_in_origin);
 
     let mut result = vec![default_server()];
     result.append(&mut servers);
@@ -524,6 +550,23 @@ mod tests {
                 }
             ],
         })
+    }
+
+    /// Without the `lnaddr-debug-server` feature (the only configuration
+    /// that ships) the built-in entry is exactly [`DEFAULT_SERVER`], with no
+    /// way for the environment to change it. Guards against the debug hook
+    /// leaking into a normal build.
+    #[test]
+    #[cfg_attr(
+        feature = "lnaddr-debug-server",
+        ignore = "debug override feature is enabled in this build"
+    )]
+    fn built_in_server_is_the_default_without_the_debug_feature() {
+        assert_eq!(configured_default_server(), DEFAULT_SERVER);
+
+        let server = default_server();
+        assert_eq!(server.origin, DEFAULT_SERVER.0);
+        assert_eq!(server.domains, vec![DEFAULT_SERVER.1.to_string()]);
     }
 
     #[test]
