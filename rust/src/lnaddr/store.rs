@@ -117,10 +117,10 @@ impl LnAddressStore {
         // Safety net: if the record moved away from (or dropped out of) a
         // federation it used to be primary for, that federation may now have
         // records but no primary. Promote its oldest remaining record.
-        if let Some(old_federation_id) = existing.and_then(|old| old.federation_id) {
-            if Some(old_federation_id) != record.federation_id {
-                ensure_primary_exists(&mut dbtx, old_federation_id).await;
-            }
+        if let Some(old_federation_id) = existing.and_then(|old| old.federation_id)
+            && Some(old_federation_id) != record.federation_id
+        {
+            ensure_primary_exists(&mut dbtx, old_federation_id).await;
         }
 
         dbtx.commit_tx().await;
@@ -164,20 +164,13 @@ impl LnAddressStore {
 
         dbtx.remove_entry(&key).await;
 
-        if removed.is_primary {
-            if let Some(federation_id) = removed.federation_id {
-                ensure_primary_exists(&mut dbtx, federation_id).await;
-            }
+        if removed.is_primary
+            && let Some(federation_id) = removed.federation_id
+        {
+            ensure_primary_exists(&mut dbtx, federation_id).await;
         }
 
         dbtx.commit_tx().await;
-    }
-
-    pub async fn primary_for(&self, federation: &FederationId) -> Option<LnAddressRecord> {
-        self.list()
-            .await
-            .into_iter()
-            .find(|record| record.federation_id == Some(*federation) && record.is_primary)
     }
 }
 
@@ -250,6 +243,19 @@ mod tests {
 
     fn test_store() -> LnAddressStore {
         LnAddressStore::new(Database::new(MemDatabase::new(), Default::default()))
+    }
+
+    /// Usernames of every record `federation` currently has marked primary.
+    /// The invariant means this is always 0 or 1 long; returning a `Vec` lets
+    /// a test catch a violation instead of hiding it behind a `find`.
+    async fn primaries_of(store: &LnAddressStore, federation: &FederationId) -> Vec<String> {
+        store
+            .list()
+            .await
+            .into_iter()
+            .filter(|record| record.federation_id == Some(*federation) && record.is_primary)
+            .map(|record| record.username)
+            .collect()
     }
 
     fn record(
@@ -370,11 +376,9 @@ mod tests {
         assert_eq!(alice.destination, "LNURL1CHANGED");
         assert!(!store.get("example.com", "bob").await.unwrap().is_primary);
 
-        let primary = store.primary_for(&fed).await;
-        assert_eq!(
-            primary.map(|record| record.username),
-            Some("alice".to_string())
-        );
+        // The federation still has exactly one primary, and it is alice.
+        let primaries = primaries_of(&store, &fed).await;
+        assert_eq!(primaries, vec!["alice".to_string()]);
     }
 
     #[tokio::test]
@@ -411,19 +415,6 @@ mod tests {
             .await;
 
         assert!(!store.get("example.com", "alice").await.unwrap().is_primary);
-    }
-
-    #[tokio::test]
-    async fn primary_for_returns_current_primary() {
-        let store = test_store();
-        let fed = FederationId::dummy();
-
-        store
-            .upsert(record("example.com", "alice", Some(fed), false, 100))
-            .await;
-
-        let primary = store.primary_for(&fed).await.unwrap();
-        assert_eq!(primary.username, "alice");
     }
 
     #[tokio::test]

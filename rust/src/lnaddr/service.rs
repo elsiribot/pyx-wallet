@@ -402,6 +402,10 @@ mod tests {
         }
     }
 
+    /// What a fake transport hands back for one request: `(status, body)`,
+    /// or a transport-level error string.
+    type CannedResponse = Result<(u16, Vec<u8>), String>;
+
     /// Records every request and always answers with one canned
     /// `(status, body)` — enough here since each test drives at most one
     /// endpoint shape per service call under test. Mirrors the
@@ -475,12 +479,12 @@ mod tests {
     /// exercise per-server failure isolation, which a single-canned-response
     /// `FakeTransport` can't: each origin needs its own outcome.
     struct MixedTransport {
-        responses: Vec<(String, Result<(u16, Vec<u8>), String>)>,
+        responses: Vec<(String, CannedResponse)>,
         recorded: Mutex<Vec<String>>,
     }
 
     impl MixedTransport {
-        fn new(responses: Vec<(String, Result<(u16, Vec<u8>), String>)>) -> Self {
+        fn new(responses: Vec<(String, CannedResponse)>) -> Self {
             Self {
                 responses,
                 recorded: Mutex::new(Vec::new()),

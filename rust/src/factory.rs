@@ -5,10 +5,9 @@ use crate::db::{
     ClientConfigKey, ClientConfigPrefix, ContactKey, ContactPrefix, DbKeyPrefix,
     EventLogEntryPrefix, RootEntropyKey, SelectedCurrencyKey,
 };
-use crate::lnaddr::{LnAddressServiceImpl, nostr_keypair};
+use crate::lnaddr::LnAddressServiceImpl;
 use crate::lnurl::LnurlWrapper;
 use crate::{DatabaseWrapper, InviteCodeWrapper, MnemonicWrapper};
-use bitcoin::secp256k1::Keypair;
 use fedimint_bip39::Bip39RootSecretStrategy;
 use fedimint_client::meta::MetaService;
 use fedimint_client::module_init::ClientModuleInitRegistry;
@@ -194,13 +193,6 @@ impl ConduitClientFactory {
         RootSecret::StandardDoubleDerive(Bip39RootSecretStrategy::<12>::to_root_secret(
             &self.mnemonic,
         ))
-    }
-
-    /// App-global Nostr keypair, derived from the wallet's seed at
-    /// `global_root_secret/child_key(ChildId(1))`. Stable across
-    /// federations: unlike `root_secret`, this is not federation-scoped.
-    pub(crate) fn nostr_keypair(&self) -> Keypair {
-        nostr_keypair(&self.mnemonic)
     }
 
     /// The wallet's Lightning Address service (claim/sync/recover), shared

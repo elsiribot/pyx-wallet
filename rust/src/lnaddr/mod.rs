@@ -21,9 +21,7 @@ pub(crate) use discovery::{
     DEFAULT_RELAYS, DEFAULT_SERVER, DiscoveredServer, default_server_domain, default_server_origin,
     discover, is_public_domain, normalize_origin,
 };
-#[allow(unused_imports)] // nostr_pubkey_hex stays unused until a later task exposes
-// the wallet's Nostr identity directly (e.g. a JNI "my lnaddr pubkey" call).
-pub(crate) use identity::{nostr_keypair, nostr_pubkey_hex};
+pub(crate) use identity::nostr_keypair;
 #[allow(unused_imports)] // Consumed once Task 5+ wires in the lnaddrd HTTP client.
 pub(crate) use nip98::nip98_header;
 #[allow(unused_imports)] // is_valid_domain/is_valid_username are re-exported for the JNI

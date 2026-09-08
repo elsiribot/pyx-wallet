@@ -30,6 +30,13 @@ pub(crate) fn nostr_keypair(mnemonic: &Mnemonic) -> Keypair {
 }
 
 /// Lowercase hex x-only pubkey (64 chars) — the wallet's npub in hex form.
+///
+/// Test-only: v1 deliberately does not surface the npub in the UI (see
+/// `docs/superpowers/specs/2026-09-06-lightning-address-design.md`), so the
+/// only consumer is the golden-value test below that pins the derivation
+/// path. Drop the `cfg(test)` when a real caller (e.g. a JNI "my lnaddr
+/// pubkey" call) appears.
+#[cfg(test)]
 pub(crate) fn nostr_pubkey_hex(keypair: &Keypair) -> String {
     let (x_only, _parity) = keypair.x_only_public_key();
     fedimint_core::hex::encode(x_only.serialize())
